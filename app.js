@@ -295,28 +295,42 @@ function updateUI() {
 
 function renderFoodMenu() {
   if (!state.data) return;
-  const list = state.data.food[state.currentFoodPeriod] || [];
   const container = $('food-list');
   
-  container.innerHTML = list.map((item, idx) => `
+  // 通用池使用extraPool，其他时段使用food
+  let list;
+  if (state.currentFoodPeriod === 'extra') {
+    list = state.data.extraPool || [];
+  } else {
+    list = state.data.food[state.currentFoodPeriod] || [];
+  }
+  
+  container.innerHTML = list.length ? list.map((item, idx) => `
     <div class="menu-item">
       <span class="name">${item}</span>
-      ${state.isAdmin ? `<button class="delete-btn" data-type="food" data-period="${state.currentFoodPeriod}" data-idx="${idx}">x</button>` : ''}
+      ${state.isAdmin ? `<button class="delete-btn" data-type="${state.currentFoodPeriod === 'extra' ? 'extraPool' : 'food'}" data-period="${state.currentFoodPeriod}" data-idx="${idx}">x</button>` : ''}
     </div>
-  `).join('');
+  `).join('') : '<p class="empty">暂无菜品</p>';
 }
 
 function renderDrinkMenu() {
   if (!state.data) return;
-  const list = state.data.drink[state.currentDrinkPeriod] || [];
   const container = $('drink-list');
   
-  container.innerHTML = list.map((item, idx) => `
+  // 合并所有时段的饮品，去重
+  const allDrinks = [
+    ...(state.data.drink?.morning || []),
+    ...(state.data.drink?.afternoon || []),
+    ...(state.data.drink?.evening || []),
+    ...(state.data.drink?.night || [])
+  ].filter((v, i, a) => a.indexOf(v) === i);
+  
+  container.innerHTML = allDrinks.length ? allDrinks.map((item, idx) => `
     <div class="menu-item">
       <span class="name">${item}</span>
-      ${state.isAdmin ? `<button class="delete-btn" data-type="drink" data-period="${state.currentDrinkPeriod}" data-idx="${idx}">x</button>` : ''}
+      ${state.isAdmin ? `<button class="delete-btn" data-type="drink" data-period="all" data-idx="${idx}">x</button>` : ''}
     </div>
-  `).join('');
+  `).join('') : '<p class="empty">暂无饮品</p>';
 }
 
 function renderAdminList() {
@@ -459,29 +473,41 @@ async function saveGist() {
 
 async function addItem(type, period, name) {
   if (!state.isAdmin) {
-    // 访客：添加到待审核
-    if (!state.data.pendingRequests) state.data.pendingRequests = [];
-    state.data.pendingRequests.push({
-      type,
-      period,
-      name,
-      time: new Date().toISOString()
-    });
-    await saveGist();
-    alert('已提交申请，等待管理员审核');
+    // 访客：提交到KV待审核
+    const result = await kvAddPending('加' + (type === 'food' ? '菜' : '饮'), type, period, name);
+    alert(result.success ? '已提交申请，等待管理员审核' : (result.error || '提交失败'));
     return;
   }
   
   // 管理员：直接添加
-  if (!state.data[type]) state.data[type] = {};
-  if (!state.data[type][period]) state.data[type][period] = [];
-  
-  if (state.data[type][period].includes(name)) {
-    alert('该项已存在');
-    return;
+  if (type === 'extraPool' || period === 'extra') {
+    // 通用池
+    if (!state.data.extraPool) state.data.extraPool = [];
+    if (state.data.extraPool.includes(name)) {
+      alert('该项已存在');
+      return;
+    }
+    state.data.extraPool.push(name);
+  } else if (type === 'drink') {
+    // 饮品：添加到所有时段
+    if (!state.data.drink) state.data.drink = {};
+    ['morning', 'afternoon', 'evening', 'night'].forEach(p => {
+      if (!state.data.drink[p]) state.data.drink[p] = [];
+      if (!state.data.drink[p].includes(name)) {
+        state.data.drink[p].push(name);
+      }
+    });
+  } else {
+    // 普通菜品
+    if (!state.data[type]) state.data[type] = {};
+    if (!state.data[type][period]) state.data[type][period] = [];
+    if (state.data[type][period].includes(name)) {
+      alert('该项已存在');
+      return;
+    }
+    state.data[type][period].push(name);
   }
   
-  state.data[type][period].push(name);
   await saveGist();
   updateUI();
 }
@@ -489,7 +515,31 @@ async function addItem(type, period, name) {
 async function removeItem(type, period, idx) {
   if (!state.isAdmin) return;
   
-  state.data[type][period].splice(idx, 1);
+  if (type === 'extraPool') {
+    // 从通用池删除
+    state.data.extraPool.splice(idx, 1);
+  } else if (period === 'all') {
+    // 从所有时段删除饮品
+    const allDrinks = [
+      ...(state.data.drink?.morning || []),
+      ...(state.data.drink?.afternoon || []),
+      ...(state.data.drink?.evening || []),
+      ...(state.data.drink?.night || [])
+    ].filter((v, i, a) => a.indexOf(v) === i);
+    const drinkName = allDrinks[idx];
+    if (drinkName) {
+      ['morning', 'afternoon', 'evening', 'night'].forEach(p => {
+        if (state.data.drink?.[p]) {
+          const i = state.data.drink[p].indexOf(drinkName);
+          if (i > -1) state.data.drink[p].splice(i, 1);
+        }
+      });
+    }
+  } else {
+    // 普通删除
+    state.data[type][period].splice(idx, 1);
+  }
+  
   await saveGist();
   updateUI();
 }
