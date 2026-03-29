@@ -7,12 +7,16 @@ const CONFIG = {
   // API 端点
   githubApi: 'https://api.github.com',
   
-  // 数据读取镜像源（多源自动切换）
+  // 数据读取镜像源（多源自动切换，按优先级排列）
   dataUrls: [
-    'https://fastly.jsdelivr.net/gh/MOYIre/shiling-data@master/menu.json',
-    'https://cdn.jsdelivr.net/gh/MOYIre/shiling-data@master/menu.json',
+    // 国内镜像源（优先，无缓存问题）
     'https://ghproxy.net/https://gist.githubusercontent.com/MOYIre/a9f8a81d1ec3498c0d7b7afc24f43794/raw',
-    'https://gist.githubusercontent.com/MOYIre/a9f8a81d1ec3498c0d7b7afc24f43794/raw'
+    // jsdelivr CDN（快速但有缓存）
+    'https://cdn.jsdelivr.net/gh/MOYIre/shiling-data@master/menu.json',
+    'https://fastly.jsdelivr.net/gh/MOYIre/shiling-data@master/menu.json',
+    // 原始GitHub（备用）
+    'https://gist.githubusercontent.com/MOYIre/a9f8a81d1ec3498c0d7b7afc24f43794/raw',
+    'https://raw.githubusercontent.com/MOYIre/shiling-data/master/menu.json'
   ],
   
   // 时段名称映射
