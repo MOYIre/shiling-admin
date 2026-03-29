@@ -4,10 +4,11 @@
  */
 
 export async function onRequest({ request, env }) {
-  const kv = env.SHILING_KV;
+  // 使用全局XBSKV变量
+  const kv = typeof XBSKV !== 'undefined' ? XBSKV : env?.SHILING_KV;
   
   if (!kv) {
-    return new Response(JSON.stringify({ error: 'KV存储未配置，请绑定变量名 SHILING_KV' }), { 
+    return new Response(JSON.stringify({ error: 'KV存储未配置，请绑定变量名 XBSKV' }), { 
       status: 500, 
       headers: { 'Content-Type': 'application/json' } 
     });
