@@ -4,11 +4,10 @@
  */
 
 export async function onRequest({ request, env }) {
-  // 使用全局XBSKV变量
-  const kv = typeof XBSKV !== 'undefined' ? XBSKV : env?.SHILING_KV;
+  const kv = env.SHILING_KV;
   
   if (!kv) {
-    return new Response(JSON.stringify({ error: 'KV存储未配置，请在EdgeOne Pages控制台绑定KV命名空间' }), { 
+    return new Response(JSON.stringify({ error: 'KV存储未配置，请绑定变量名 SHILING_KV' }), { 
       status: 500, 
       headers: { 'Content-Type': 'application/json' } 
     });
@@ -17,7 +16,6 @@ export async function onRequest({ request, env }) {
   const method = request.method;
   const url = new URL(request.url);
   
-  // CORS
   const headers = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
@@ -30,13 +28,11 @@ export async function onRequest({ request, env }) {
   }
   
   try {
-    // GET: 获取所有待审核
     if (method === 'GET') {
       const data = await kv.get('pendingRequests', { type: 'json' });
       return new Response(JSON.stringify(data || []), { headers });
     }
     
-    // POST: 添加待审核
     if (method === 'POST') {
       const body = await request.json();
       const { action, type, period, name } = body;
@@ -54,26 +50,19 @@ export async function onRequest({ request, env }) {
         return new Response(JSON.stringify({ error: '该申请已存在' }), { status: 400, headers });
       }
       
-      pending.push({
-        action, type, period, name,
-        time: new Date().toISOString()
-      });
-      
+      pending.push({ action, type, period, name, time: new Date().toISOString() });
       await kv.put('pendingRequests', JSON.stringify(pending));
       
-      return new Response(JSON.stringify({ success: true, message: '提交成功' }), { headers });
+      return new Response(JSON.stringify({ success: true }), { headers });
     }
     
-    // DELETE: 删除待审核项
     if (method === 'DELETE') {
       const idx = parseInt(url.searchParams.get('idx') || '-1');
-      
       if (idx < 0) {
         return new Response(JSON.stringify({ error: '无效索引' }), { status: 400, headers });
       }
       
       let pending = await kv.get('pendingRequests', { type: 'json' }) || [];
-      
       if (idx >= pending.length) {
         return new Response(JSON.stringify({ error: '索引越界' }), { status: 400, headers });
       }
