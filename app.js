@@ -34,6 +34,32 @@ const CONFIG = {
   }
 };
 
+// ==================== KV API ====================
+const KV_API = '/api/pending';
+
+async function kvGetPending() {
+  try {
+    const res = await fetch(KV_API);
+    return await res.json();
+  } catch {
+    return [];
+  }
+}
+
+async function kvAddPending(action, type, period, name) {
+  const res = await fetch(KV_API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, type, period, name })
+  });
+  return await res.json();
+}
+
+async function kvRemovePending(idx) {
+  const res = await fetch(KV_API + '?idx=' + idx, { method: 'DELETE' });
+  return await res.json();
+}
+
 // ==================== 状态管理 ====================
 const state = {
   token: null,
