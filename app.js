@@ -10,7 +10,14 @@ const CONFIG = {
   
   // API 端点
   githubApi: 'https://api.github.com',
-  gistUrl: 'https://gist.githubusercontent.com/MOYIre/a9f8a81d1ec3498c0d7b7afc24f43794/raw',
+  
+  // 数据读取镜像源（多源自动切换）
+  dataUrls: [
+    'https://fastly.jsdelivr.net/gh/MOYIre/shiling-data@master/menu.json',
+    'https://cdn.jsdelivr.net/gh/MOYIre/shiling-data@master/menu.json',
+    'https://ghproxy.net/https://gist.githubusercontent.com/MOYIre/a9f8a81d1ec3498c0d7b7afc24f43794/raw',
+    'https://gist.githubusercontent.com/MOYIre/a9f8a81d1ec3498c0d7b7afc24f43794/raw'
+  ],
   
   // 时段名称映射
   foodPeriods: {
@@ -52,16 +59,22 @@ function showScreen(screenId) {
 }
 
 async function fetchGist() {
-  try {
-    const res = await fetch(CONFIG.gistUrl);
-    if (!res.ok) throw new Error('Failed to fetch gist');
-    state.data = await res.json();
-    return state.data;
-  } catch (err) {
-    console.error('Fetch gist error:', err);
-    alert('获取数据失败，请稍后重试');
-    throw err;
+  // 尝试多个镜像源
+  for (let i = 0; i < CONFIG.dataUrls.length; i++) {
+    const url = CONFIG.dataUrls[i];
+    try {
+      console.log(`尝试从源 ${i + 1}/${CONFIG.dataUrls.length} 获取数据`);
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      state.data = await res.json();
+      console.log(`成功从源 ${i + 1} 获取数据`);
+      return state.data;
+    } catch (err) {
+      console.error(`源 ${i + 1} 获取失败:`, err.message);
+    }
   }
+  alert('获取数据失败，所有镜像源均不可用');
+  throw new Error('All mirrors failed');
 }
 
 async function githubApi(endpoint, options = {}) {
