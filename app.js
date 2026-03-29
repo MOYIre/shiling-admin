@@ -370,6 +370,47 @@ function renderPendingList() {
   `).join('');
 }
 
+// ==================== CDN缓存刷新 ====================
+async function refreshCDN() {
+  const cdnUrls = [
+    'https://purge.jsdelivr.net/gh/MOYIre/shiling-data@master/menu.json',
+    'https://purge.jsdelivr.net/gh/MOYIre/shiling-data@latest/menu.json'
+  ];
+  
+  for (const url of cdnUrls) {
+    try {
+      await fetch(url, { method: 'POST' });
+      console.log('CDN缓存刷新:', url);
+    } catch (e) {
+      console.log('CDN刷新失败:', e);
+    }
+  }
+}
+
+// ==================== 同步到GitHub仓库 ====================
+async function syncToRepo() {
+  try {
+    // 获取当前文件sha
+    const fileData = await githubApi('/repos/MOYIre/shiling-data/contents/menu.json');
+    
+    // 更新文件
+    const content = btoa(unescape(encodeURIComponent(JSON.stringify(state.data, null, 2))));
+    await githubApi('/repos/MOYIre/shiling-data/contents/menu.json', {
+      method: 'PUT',
+      body: JSON.stringify({
+        message: 'sync: 同步菜单数据',
+        content: content,
+        sha: fileData.sha
+      })
+    });
+    console.log('已同步到shiling-data仓库');
+    return true;
+  } catch (e) {
+    console.error('同步仓库失败:', e);
+    return false;
+  }
+}
+
 // ==================== 数据操作 ====================
 async function saveGist() {
   if (!state.isAdmin) {
@@ -385,6 +426,7 @@ async function saveGist() {
   }
   
   try {
+    // 1. 保存到Gist
     await githubApi(`/gists/${CONFIG.gistId}`, {
       method: 'PATCH',
       body: JSON.stringify({
@@ -396,7 +438,13 @@ async function saveGist() {
       })
     });
     
-    // 更新待审核计数
+    // 2. 同步到shiling-data仓库（jsdelivr从这里读取）
+    await syncToRepo();
+    
+    // 3. 刷新CDN缓存
+    await refreshCDN();
+    
+    // 更新UI
     updateUI();
   } catch (err) {
     console.error('Save gist error:', err);
