@@ -703,15 +703,14 @@ function handleUrlParams() {
 function showSubmitDialog(data) {
   const periodNames = {
     breakfast: '早餐', lunch: '午餐', dinner: '晚餐', midnight: '夜宵',
-    morning: '早茶', afternoon: '下午茶', evening: '晚茶', night: '夜茶'
+    extra: '通用池', all: '不限时段'
   };
   
   const actionText = data.action === '加菜' || data.action === '加饮' ? '添加' : '删除';
   const typeText = data.type === 'food' ? '菜品' : '饮品';
-  const periodName = periodNames[data.period];
+  const periodName = periodNames[data.period] || data.period;
   
   if (!state.isAdmin && !state.isSuperAdmin) {
-    // 非管理员：显示提示
     alert(
       '申请' + actionText + typeText + '\n' +
       '时段：' + periodName + '\n' +
@@ -724,7 +723,6 @@ function showSubmitDialog(data) {
     return;
   }
   
-  // 管理员：确认执行
   if (confirm('确认' + actionText + typeText + '：' + periodName + ' - ' + data.name + '\n\n您是管理员，点击确定将直接执行')) {
     executeAction(data);
   }
@@ -742,32 +740,57 @@ function submitPendingRequest(data) {
     time: new Date().toISOString()
   });
   
-  // 需要管理员权限才能保存
-  alert('申请已记录！\n请等待管理员登录后审核。\n\n提示：可联系管理员尽快处理');
-  // 存到本地临时存储
+  alert('申请已记录！\n请等待管理员登录后审核。');
   localStorage.setItem('shiling_pending', JSON.stringify(state.data.pendingRequests));
 }
 
 function executeAction(data) {
   const isAdd = data.action === '加菜' || data.action === '加饮';
+  const isFood = data.type === 'food';
   
   if (isAdd) {
-    // 添加
-    if (!state.data[data.type]) state.data[data.type] = {};
-    if (!state.data[data.type][data.period]) state.data[data.type][data.period] = [];
-    
-    if (state.data[data.type][data.period].includes(data.name)) {
-      alert('该' + (data.type === 'food' ? '菜品' : '饮品') + '已存在');
-      return;
+    if (data.period === 'extra') {
+      // 食物进通用池
+      if (!state.data.extraPool) state.data.extraPool = [];
+      if (state.data.extraPool.includes(data.name)) {
+        alert('该菜品已在通用池中');
+        return;
+      }
+      state.data.extraPool.push(data.name);
+    } else if (data.period === 'all') {
+      // 饮品加到所有时段
+      if (!state.data.drink) state.data.drink = {};
+      ['morning', 'afternoon', 'evening', 'night'].forEach(p => {
+        if (!state.data.drink[p]) state.data.drink[p] = [];
+        if (!state.data.drink[p].includes(data.name)) {
+          state.data.drink[p].push(data.name);
+        }
+      });
+    } else {
+      // 普通添加
+      if (!state.data[data.type]) state.data[data.type] = {};
+      if (!state.data[data.type][data.period]) state.data[data.type][data.period] = [];
+      if (state.data[data.type][data.period].includes(data.name)) {
+        alert('该' + (isFood ? '菜品' : '饮品') + '已存在');
+        return;
+      }
+      state.data[data.type][data.period].push(data.name);
     }
-    state.data[data.type][data.period].push(data.name);
   } else {
     // 删除
-    if (state.data[data.type]?.[data.period]) {
-      const idx = state.data[data.type][data.period].indexOf(data.name);
-      if (idx > -1) {
-        state.data[data.type][data.period].splice(idx, 1);
+    if (data.period === 'all') {
+      // 从所有时段删除饮品
+      if (state.data.drink) {
+        ['morning', 'afternoon', 'evening', 'night'].forEach(p => {
+          if (state.data.drink[p]) {
+            const idx = state.data.drink[p].indexOf(data.name);
+            if (idx > -1) state.data.drink[p].splice(idx, 1);
+          }
+        });
       }
+    } else if (state.data[data.type]?.[data.period]) {
+      const idx = state.data[data.type][data.period].indexOf(data.name);
+      if (idx > -1) state.data[data.type][data.period].splice(idx, 1);
     }
   }
   
