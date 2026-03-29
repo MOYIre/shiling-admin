@@ -682,8 +682,112 @@ function initEventListeners() {
   });
 }
 
+// ==================== URL参数处理 ====================
+function handleUrlParams() {
+  const params = new URLSearchParams(window.location.search);
+  const action = params.get('action');
+  const type = params.get('type');
+  const period = params.get('period');
+  const name = params.get('name');
+  
+  if (action && type && period && name) {
+    // 清除URL参数
+    window.history.replaceState({}, '', window.location.pathname);
+    
+    // 显示提交提示
+    return { action, type, period, name };
+  }
+  return null;
+}
+
+function showSubmitDialog(data) {
+  const periodNames = {
+    breakfast: '早餐', lunch: '午餐', dinner: '晚餐', midnight: '夜宵',
+    morning: '早茶', afternoon: '下午茶', evening: '晚茶', night: '夜茶'
+  };
+  
+  const actionText = data.action === '加菜' || data.action === '加饮' ? '添加' : '删除';
+  const typeText = data.type === 'food' ? '菜品' : '饮品';
+  const periodName = periodNames[data.period];
+  
+  if (!state.isAdmin && !state.isSuperAdmin) {
+    // 非管理员：显示提示
+    alert(
+      '申请' + actionText + typeText + '\n' +
+      '时段：' + periodName + '\n' +
+      '名称：' + data.name + '\n\n' +
+      '您未登录管理员账户。\n' +
+      '请联系管理员处理此请求，\n' +
+      '或将此链接转发给管理员：\n' +
+      window.location.href
+    );
+    return;
+  }
+  
+  // 管理员：确认执行
+  if (confirm('确认' + actionText + typeText + '：' + periodName + ' - ' + data.name + '\n\n您是管理员，点击确定将直接执行')) {
+    executeAction(data);
+  }
+}
+
+function submitPendingRequest(data) {
+  if (!state.data) state.data = {};
+  if (!state.data.pendingRequests) state.data.pendingRequests = [];
+  
+  state.data.pendingRequests.push({
+    action: data.action,
+    type: data.type,
+    period: data.period,
+    name: data.name,
+    time: new Date().toISOString()
+  });
+  
+  // 需要管理员权限才能保存
+  alert('申请已记录！\n请等待管理员登录后审核。\n\n提示：可联系管理员尽快处理');
+  // 存到本地临时存储
+  localStorage.setItem('shiling_pending', JSON.stringify(state.data.pendingRequests));
+}
+
+function executeAction(data) {
+  const isAdd = data.action === '加菜' || data.action === '加饮';
+  
+  if (isAdd) {
+    // 添加
+    if (!state.data[data.type]) state.data[data.type] = {};
+    if (!state.data[data.type][data.period]) state.data[data.type][data.period] = [];
+    
+    if (state.data[data.type][data.period].includes(data.name)) {
+      alert('该' + (data.type === 'food' ? '菜品' : '饮品') + '已存在');
+      return;
+    }
+    state.data[data.type][data.period].push(data.name);
+  } else {
+    // 删除
+    if (state.data[data.type]?.[data.period]) {
+      const idx = state.data[data.type][data.period].indexOf(data.name);
+      if (idx > -1) {
+        state.data[data.type][data.period].splice(idx, 1);
+      }
+    }
+  }
+  
+  saveData().then(() => {
+    alert('操作成功！');
+    renderAll();
+  }).catch(err => {
+    alert('保存失败: ' + err.message);
+  });
+}
+
 // ==================== 初始化 ====================
 document.addEventListener('DOMContentLoaded', () => {
   initEventListeners();
   checkAuth();
+  
+  // 处理URL参数（从骰子跳转来的提交请求）
+  const submitData = handleUrlParams();
+  if (submitData) {
+    // 延迟显示，等待数据加载
+    setTimeout(() => showSubmitDialog(submitData), 500);
+  }
 });
