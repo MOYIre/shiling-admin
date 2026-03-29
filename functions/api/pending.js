@@ -4,7 +4,16 @@
  */
 
 export async function onRequest({ request, env }) {
-  const kv = env.SHILING_KV;
+  // 使用全局XBSKV变量
+  const kv = typeof XBSKV !== 'undefined' ? XBSKV : env?.SHILING_KV;
+  
+  if (!kv) {
+    return new Response(JSON.stringify({ error: 'KV存储未配置，请在EdgeOne Pages控制台绑定KV命名空间' }), { 
+      status: 500, 
+      headers: { 'Content-Type': 'application/json' } 
+    });
+  }
+  
   const method = request.method;
   const url = new URL(request.url);
   
@@ -36,10 +45,8 @@ export async function onRequest({ request, env }) {
         return new Response(JSON.stringify({ error: '参数不完整' }), { status: 400, headers });
       }
       
-      // 获取现有数据
       let pending = await kv.get('pendingRequests', { type: 'json' }) || [];
       
-      // 检查重复
       const exists = pending.some(p => 
         p.action === action && p.type === type && p.period === period && p.name === name
       );
@@ -47,7 +54,6 @@ export async function onRequest({ request, env }) {
         return new Response(JSON.stringify({ error: '该申请已存在' }), { status: 400, headers });
       }
       
-      // 添加新请求
       pending.push({
         action, type, period, name,
         time: new Date().toISOString()
@@ -75,12 +81,6 @@ export async function onRequest({ request, env }) {
       pending.splice(idx, 1);
       await kv.put('pendingRequests', JSON.stringify(pending));
       
-      return new Response(JSON.stringify({ success: true }), { headers });
-    }
-    
-    // PUT: 清空所有待审核
-    if (method === 'PUT' && url.searchParams.get('clear') === 'true') {
-      await kv.put('pendingRequests', '[]');
       return new Response(JSON.stringify({ success: true }), { headers });
     }
     
