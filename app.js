@@ -4,10 +4,6 @@ const CONFIG = {
   gistId: 'a9f8a81d1ec3498c0d7b7afc24f43794',
   gistOwner: 'MOYIre',
   
-  // OAuth 配置（需要创建 OAuth App 后填入）
-  // 创建地址: https://github.com/settings/developers
-  clientId: '', // 留空，使用 Device Flow
-  
   // API 端点
   githubApi: 'https://api.github.com',
   
@@ -40,6 +36,8 @@ const state = {
   user: null,
   isSuperAdmin: false,
   isAdmin: false,
+  loginType: null, // 'github' | 'token'
+  qqNumber: null,
   data: null,
   currentFoodPeriod: 'breakfast',
   currentDrinkPeriod: 'morning'
@@ -100,11 +98,36 @@ async function githubApi(endpoint, options = {}) {
   return res.json();
 }
 
+// ==================== Token 解析 ====================
+function parseLoginToken(token) {
+  // Token格式: SHILING_<qq>_<timestamp>_<signature>
+  // 简化格式: base64编码的JSON
+  try {
+    const decoded = atob(token);
+    const data = JSON.parse(decoded);
+    
+    if (!data.qq || !data.exp || !data.sig) {
+      return null;
+    }
+    
+    // 检查是否过期
+    if (Date.now() > data.exp) {
+      return { error: 'Token已过期，请重新获取' };
+    }
+    
+    return data;
+  } catch (e) {
+    return null;
+  }
+}
+
 // ==================== 认证相关 ====================
-async function loginWithToken(token) {
+// 超级管理员登录
+async function loginWithGitHub(token) {
   showLoading();
   try {
     state.token = token;
+    state.loginType = 'github';
     
     // 获取用户信息
     const user = await githubApi('/user');
@@ -121,6 +144,7 @@ async function loginWithToken(token) {
     
     // 保存到 sessionStorage
     sessionStorage.setItem('gh_token', token);
+    sessionStorage.setItem('login_type', 'github');
     
     // 更新 UI
     updateUI();
@@ -130,6 +154,71 @@ async function loginWithToken(token) {
     console.error('Login error:', err);
     alert('登录失败: ' + err.message);
     state.token = null;
+    state.loginType = null;
+  } finally {
+    hideLoading();
+  }
+}
+
+// 普通管理员登录（骰子Token）
+async function loginWithDiceToken(token) {
+  showLoading();
+  try {
+    // 解析token
+    const tokenData = parseLoginToken(token);
+    
+    if (!tokenData) {
+      alert('无效的Token格式');
+      hideLoading();
+      return;
+    }
+    
+    if (tokenData.error) {
+      alert(tokenData.error);
+      hideLoading();
+      return;
+    }
+    
+    // 获取gist数据
+    await fetchGist();
+    
+    // 验证是否在管理员列表中
+    const admins = state.data.admins || [];
+    if (!admins.includes(tokenData.qq)) {
+      alert('您不是管理员，无法登录');
+      hideLoading();
+      return;
+    }
+    
+    // 验证签名（简化：检查token中的签名是否匹配）
+    const expectedSig = btoa(tokenData.qq + tokenData.exp + 'shiling').slice(0, 16);
+    if (tokenData.sig !== expectedSig) {
+      alert('Token签名验证失败');
+      hideLoading();
+      return;
+    }
+    
+    // 登录成功
+    state.loginType = 'token';
+    state.qqNumber = tokenData.qq;
+    state.isAdmin = true;
+    state.isSuperAdmin = false;
+    state.user = {
+      login: tokenData.qq,
+      avatar_url: `https://q1.qlogo.cn/g?b=qq&nk=${tokenData.qq}&s=100`
+    };
+    
+    // 保存到 sessionStorage
+    sessionStorage.setItem('dice_token', token);
+    sessionStorage.setItem('login_type', 'token');
+    
+    // 更新 UI
+    updateUI();
+    showScreen('main-screen');
+    
+  } catch (err) {
+    console.error('Token login error:', err);
+    alert('登录失败: ' + err.message);
   } finally {
     hideLoading();
   }
@@ -140,15 +229,28 @@ function logout() {
   state.user = null;
   state.isSuperAdmin = false;
   state.isAdmin = false;
+  state.loginType = null;
+  state.qqNumber = null;
   state.data = null;
   sessionStorage.removeItem('gh_token');
+  sessionStorage.removeItem('dice_token');
+  sessionStorage.removeItem('login_type');
   showScreen('login-screen');
 }
 
 function checkAuth() {
-  const token = sessionStorage.getItem('gh_token');
-  if (token) {
-    loginWithToken(token);
+  const loginType = sessionStorage.getItem('login_type');
+  
+  if (loginType === 'github') {
+    const token = sessionStorage.getItem('gh_token');
+    if (token) {
+      loginWithGitHub(token);
+    }
+  } else if (loginType === 'token') {
+    const token = sessionStorage.getItem('dice_token');
+    if (token) {
+      loginWithDiceToken(token);
+    }
   }
 }
 
@@ -235,6 +337,7 @@ function renderAdminList() {
   
   container.innerHTML = admins.map((admin, idx) => `
     <div class="admin-item">
+      <img src="https://q1.qlogo.cn/g?b=qq&nk=${admin}&s=40" alt="">
       <span>${admin}</span>
       ${state.isSuperAdmin ? `<button class="btn small danger" data-admin-idx="${idx}">移除</button>` : ''}
     </div>
@@ -274,12 +377,19 @@ async function saveGist() {
     return;
   }
   
+  // Token登录的用户需要通过API代理
+  if (state.loginType === 'token') {
+    // 暂时使用GitHub API（需要超级管理员预先设置）
+    alert('普通管理员暂无写入权限，请联系超级管理员');
+    return;
+  }
+  
   try {
     await githubApi(`/gists/${CONFIG.gistId}`, {
       method: 'PATCH',
       body: JSON.stringify({
         files: {
-          'menu.json': {
+          '食灵菜单数据': {
             content: JSON.stringify(state.data, null, 2)
           }
         }
@@ -386,8 +496,8 @@ async function removeAdmin(idx) {
 
 // ==================== 事件处理 ====================
 function initEventListeners() {
-  // 登录
-  $('login-btn').addEventListener('click', () => {
+  // 超级管理员登录
+  $('super-login-btn').addEventListener('click', () => {
     const token = prompt('请输入您的 GitHub Personal Access Token:\n\n' +
       '获取方式:\n' +
       '1. 访问 https://github.com/settings/tokens\n' +
@@ -396,7 +506,24 @@ function initEventListeners() {
       '4. 生成并复制 token');
     
     if (token) {
-      loginWithToken(token.trim());
+      loginWithGitHub(token.trim());
+    }
+  });
+  
+  // Token登录
+  $('token-login-btn').addEventListener('click', () => {
+    const token = $('token-input').value.trim();
+    if (!token) {
+      alert('请输入Token');
+      return;
+    }
+    loginWithDiceToken(token);
+  });
+  
+  // Token输入框回车
+  $('token-input').addEventListener('keypress', e => {
+    if (e.key === 'Enter') {
+      $('token-login-btn').click();
     }
   });
   
