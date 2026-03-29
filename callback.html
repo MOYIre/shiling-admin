@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>登录中...</title>
+  <style>
+    body {
+      font-family: -apple-system, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+      background: #1a1a2e;
+      color: #eaeaea;
+    }
+    .spinner {
+      width: 30px;
+      height: 30px;
+      border: 3px solid #2a2a4a;
+      border-top-color: #ff6b6b;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div class="spinner"></div>
+  <script>
+    // OAuth 回调处理
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('code');
+    
+    if (code) {
+      // 将 code 发送到主页面
+      window.opener.postMessage({ type: 'oauth-callback', code }, '*');
+      window.close();
+    } else {
+      window.opener.postMessage({ type: 'oauth-error', error: 'No code received' }, '*');
+      window.close();
+    }
+  </script>
+</body>
+</html>
