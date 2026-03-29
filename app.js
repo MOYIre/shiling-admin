@@ -710,22 +710,44 @@ function showSubmitDialog(data) {
   const typeText = data.type === 'food' ? '菜品' : '饮品';
   const periodName = periodNames[data.period] || data.period;
   
-  if (!state.isAdmin && !state.isSuperAdmin) {
-    alert(
-      '申请' + actionText + typeText + '\n' +
-      '时段：' + periodName + '\n' +
-      '名称：' + data.name + '\n\n' +
-      '您未登录管理员账户。\n' +
-      '请联系管理员处理此请求，\n' +
-      '或将此链接转发给管理员：\n' +
-      window.location.href
-    );
+  // 管理员直接执行
+  if (state.isAdmin || state.isSuperAdmin) {
+    if (confirm('确认' + actionText + typeText + '：' + periodName + ' - ' + data.name + '\n\n您是管理员，点击确定将直接执行')) {
+      executeAction(data);
+    }
     return;
   }
   
-  if (confirm('确认' + actionText + typeText + '：' + periodName + ' - ' + data.name + '\n\n您是管理员，点击确定将直接执行')) {
-    executeAction(data);
+  // 非管理员：提交到待审核列表
+  if (confirm('申请' + actionText + typeText + '：' + periodName + ' - ' + data.name + '\n\n确定提交审核吗？')) {
+    addToPending(data);
   }
+}
+
+function addToPending(data) {
+  // 存到localStorage
+  let pending = JSON.parse(localStorage.getItem('shiling_pending') || '[]');
+  
+  // 检查是否已存在相同申请
+  const exists = pending.some(p => 
+    p.action === data.action && 
+    p.type === data.type && 
+    p.period === data.period && 
+    p.name === data.name
+  );
+  
+  if (exists) {
+    alert('该申请已存在，请勿重复提交');
+    return;
+  }
+  
+  pending.push({
+    ...data,
+    time: new Date().toISOString()
+  });
+  
+  localStorage.setItem('shiling_pending', JSON.stringify(pending));
+  alert('提交成功！请等待管理员审核');
 }
 
 function submitPendingRequest(data) {
@@ -810,7 +832,6 @@ document.addEventListener('DOMContentLoaded', () => {
   // 处理URL参数（从骰子跳转来的提交请求）
   const submitData = handleUrlParams();
   if (submitData) {
-    // 延迟显示，等待数据加载
     setTimeout(() => showSubmitDialog(submitData), 500);
   }
 });
