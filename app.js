@@ -286,17 +286,7 @@ function updateUI() {
     });
   }
   
-  // 更新待审核数量
-  const pendingCount = state.data?.pendingRequests?.length || 0;
-  const countEl = $('pending-count');
-  if (pendingCount > 0) {
-    countEl.textContent = pendingCount;
-    countEl.classList.remove('hidden');
-  } else {
-    countEl.classList.add('hidden');
-  }
-  
-  // 渲染菜单
+  // 渲染菜单（renderPendingList会更新待审核数量）
   renderFoodMenu();
   renderDrinkMenu();
   renderAdminList();
@@ -348,21 +338,32 @@ function renderAdminList() {
   `).join('');
 }
 
-function renderPendingList() {
-  if (!state.data) return;
-  const pending = state.data.pendingRequests || [];
+async function renderPendingList() {
   const container = $('pending-list');
+  
+  // 从KV获取待审核列表
+  const pending = await kvGetPending();
+  
+  // 更新待审核数量
+  const countEl = $('pending-count');
+  if (pending.length > 0) {
+    countEl.textContent = pending.length;
+    countEl.classList.remove('hidden');
+  } else {
+    countEl.classList.add('hidden');
+  }
   
   if (pending.length === 0) {
     container.innerHTML = '<p class="empty">暂无待审核申请</p>';
     return;
   }
   
-  const periodNames = { ...CONFIG.foodPeriods, ...CONFIG.drinkPeriods };
+  const periodNames = { ...CONFIG.foodPeriods, extra: '通用池', all: '不限时段' };
   
   container.innerHTML = pending.map((req, idx) => `
     <div class="pending-item">
       <div class="info">
+        <div class="action">${req.action || '加菜'}</div>
         <div class="type">${req.type === 'food' ? '菜品' : '饮品'} - ${periodNames[req.period] || req.period}</div>
         <div class="name">${req.name}</div>
       </div>
@@ -496,27 +497,26 @@ async function removeItem(type, period, idx) {
 async function approveRequest(idx) {
   if (!state.isAdmin) return;
   
-  const req = state.data.pendingRequests[idx];
+  // 从KV获取待审核列表
+  const pending = await kvGetPending();
+  const req = pending[idx];
+  if (!req) { alert('请求不存在'); return; }
   
-  // 添加到对应菜单
-  if (!state.data[req.type]) state.data[req.type] = {};
-  if (!state.data[req.type][req.period]) state.data[req.type][req.period] = [];
+  // 执行操作
+  await executeAction(req);
   
-  if (!state.data[req.type][req.period].includes(req.name)) {
-    state.data[req.type][req.period].push(req.name);
-  }
+  // 从KV删除
+  await kvRemovePending(idx);
   
-  // 从待审核中移除
-  state.data.pendingRequests.splice(idx, 1);
-  await saveGist();
   updateUI();
 }
 
 async function rejectRequest(idx) {
   if (!state.isAdmin) return;
   
-  state.data.pendingRequests.splice(idx, 1);
-  await saveGist();
+  // 从KV删除
+  await kvRemovePending(idx);
+  
   updateUI();
 }
 
