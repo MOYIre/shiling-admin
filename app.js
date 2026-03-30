@@ -55,8 +55,8 @@ async function kvAddPending(action, type, period, name) {
   return await res.json();
 }
 
-async function kvRemovePending(idx) {
-  const res = await fetch(KV_API + '?idx=' + idx, { method: 'DELETE' });
+async function kvRemovePending(idx, status = 'rejected') {
+  const res = await fetch(KV_API + '?idx=' + idx + '&status=' + status, { method: 'DELETE' });
   return await res.json();
 }
 
@@ -609,7 +609,7 @@ async function approveRequest(idx) {
   // 后台执行操作
   try {
     await executeApproval(req);
-    await kvRemovePending(idx);
+    await kvRemovePending(idx, 'approved');
   } catch (err) {
     alert('操作失败: ' + err.message);
   }
@@ -634,7 +634,7 @@ async function rejectRequest(idx) {
   
   // 后台执行删除
   try {
-    await kvRemovePending(idx);
+    await kvRemovePending(idx, 'rejected');
   } catch (err) {
     alert('删除失败: ' + err.message);
   }

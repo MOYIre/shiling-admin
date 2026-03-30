@@ -103,6 +103,8 @@ export async function onRequest({ request, env }) {
     
     if (method === 'DELETE') {
       const idx = parseInt(url.searchParams.get('idx') || '-1');
+      const status = url.searchParams.get('status') || 'rejected'; // approved 或 rejected
+      
       if (idx < 0) {
         return new Response(JSON.stringify({ error: '无效索引' }), { status: 400, headers });
       }
@@ -112,6 +114,27 @@ export async function onRequest({ request, env }) {
         return new Response(JSON.stringify({ error: '索引越界' }), { status: 400, headers });
       }
       
+      // 获取被删除的项
+      const removed = pending[idx];
+      
+      // 保存到历史记录
+      let history = await kv.get('approvalHistory', { type: 'json' }) || [];
+      history.push({
+        action: removed.action,
+        type: removed.type,
+        period: removed.period,
+        name: removed.name,
+        qq: removed.qq || '',
+        status: status,
+        time: new Date().toISOString()
+      });
+      // 只保留最近100条
+      if (history.length > 100) {
+        history = history.slice(-100);
+      }
+      await kv.put('approvalHistory', JSON.stringify(history));
+      
+      // 从待审核列表删除
       pending.splice(idx, 1);
       await kv.put('pendingRequests', JSON.stringify(pending));
       
