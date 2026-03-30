@@ -464,33 +464,35 @@ async function saveGist() {
     return;
   }
   
-  // Token登录的用户需要通过API代理
-  if (state.loginType === 'token') {
-    // 暂时使用GitHub API（需要超级管理员预先设置）
-    alert('普通管理员暂无写入权限，请联系超级管理员');
-    return;
-  }
-  
   try {
-    // 1. 保存到Gist
-    await githubApi(`/gists/${CONFIG.gistId}`, {
-      method: 'PATCH',
-      body: JSON.stringify({
-        files: {
-          '食灵菜单数据': {
-            content: JSON.stringify(state.data, null, 2)
+    if (state.loginType === 'token') {
+      // 普通管理员：通过Edge Function代理保存
+      const res = await fetch(KV_API, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data: state.data })
+      });
+      const result = await res.json();
+      if (!result.success) {
+        throw new Error(result.error || '保存失败');
+      }
+    } else {
+      // 超级管理员：直接调用GitHub API
+      await githubApi(`/gists/${CONFIG.gistId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          files: {
+            '食灵菜单数据': {
+              content: JSON.stringify(state.data, null, 2)
+            }
           }
-        }
-      })
-    });
+        })
+      });
+      
+      await syncToRepo();
+      await refreshCDN();
+    }
     
-    // 2. 同步到shiling-data仓库（jsdelivr从这里读取）
-    await syncToRepo();
-    
-    // 3. 刷新CDN缓存
-    await refreshCDN();
-    
-    // 更新UI
     updateUI();
   } catch (err) {
     console.error('Save gist error:', err);

@@ -3,9 +3,14 @@
  * EdgeOne Pages Edge Function
  */
 
+const GIST_ID = 'a9f8a81d1ec3498c0d7b7afc24f43794';
+const GIST_OWNER = 'MOYIre';
+
 export async function onRequest({ request, env }) {
   // 使用全局XBSKV变量
   const kv = typeof XBSKV !== 'undefined' ? XBSKV : env?.SHILING_KV;
+  // GitHub Token
+  const ghToken = typeof GITHUB_TOKEN !== 'undefined' ? GITHUB_TOKEN : env?.GITHUB_TOKEN;
   
   if (!kv) {
     return new Response(JSON.stringify({ error: 'KV存储未配置，请绑定变量名 XBSKV' }), { 
@@ -19,7 +24,7 @@ export async function onRequest({ request, env }) {
   
   const headers = {
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, DELETE, PUT, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
     'Content-Type': 'application/json'
   };
@@ -36,7 +41,7 @@ export async function onRequest({ request, env }) {
     
     if (method === 'POST') {
       const body = await request.json();
-      const { action, type, period, name } = body;
+      const { action, type, period, name, qq } = body;
       
       if (!action || !type || !period || !name) {
         return new Response(JSON.stringify({ error: '参数不完整' }), { status: 400, headers });
@@ -51,7 +56,7 @@ export async function onRequest({ request, env }) {
         return new Response(JSON.stringify({ error: '该申请已存在' }), { status: 400, headers });
       }
       
-      pending.push({ action, type, period, name, time: new Date().toISOString() });
+      pending.push({ action, type, period, name, qq: qq || '', time: new Date().toISOString() });
       await kv.put('pendingRequests', JSON.stringify(pending));
       
       return new Response(JSON.stringify({ success: true }), { headers });
@@ -70,6 +75,71 @@ export async function onRequest({ request, env }) {
       
       pending.splice(idx, 1);
       await kv.put('pendingRequests', JSON.stringify(pending));
+      
+      return new Response(JSON.stringify({ success: true }), { headers });
+    }
+    
+    // PUT: 保存数据到Gist和仓库
+    if (method === 'PUT') {
+      if (!ghToken) {
+        return new Response(JSON.stringify({ error: 'GitHub Token未配置' }), { status: 500, headers });
+      }
+      
+      const body = await request.json();
+      const { data } = body;
+      
+      if (!data) {
+        return new Response(JSON.stringify({ error: '缺少数据' }), { status: 400, headers });
+      }
+      
+      const content = JSON.stringify(data, null, 2);
+      
+      // 1. 更新Gist
+      const gistRes = await fetch(`https://api.github.com/gists/${GIST_ID}`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `token ${ghToken}`,
+          'Accept': 'application/vnd.github.v3+json',
+          'User-Agent': 'ShilingBot'
+        },
+        body: JSON.stringify({
+          files: { '食灵菜单数据': { content } }
+        })
+      });
+      
+      if (!gistRes.ok) {
+        const err = await gistRes.json();
+        return new Response(JSON.stringify({ error: 'Gist更新失败: ' + (err.message || gistRes.status) }), { status: 500, headers });
+      }
+      
+      // 2. 同步到仓库
+      const fileRes = await fetch(`https://api.github.com/repos/${GIST_OWNER}/shiling-data/contents/menu.json`, {
+        headers: { 'Authorization': `token ${ghToken}`, 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'ShilingBot' }
+      });
+      const fileData = await fileRes.json();
+      
+      const repoRes = await fetch(`https://api.github.com/repos/${GIST_OWNER}/shiling-data/contents/menu.json`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `token ${ghToken}`,
+          'Accept': 'application/vnd.github.v3+json',
+          'User-Agent': 'ShilingBot'
+        },
+        body: JSON.stringify({
+          message: 'sync: 同步菜单数据',
+          content: btoa(unescape(encodeURIComponent(content))),
+          sha: fileData.sha
+        })
+      });
+      
+      if (!repoRes.ok) {
+        console.error('仓库同步失败，但Gist已更新');
+      }
+      
+      // 3. 刷新CDN缓存
+      try {
+        await fetch('https://purge.jsdelivr.net/gh/MOYIre/shiling-data@master/menu.json', { method: 'POST' });
+      } catch (e) {}
       
       return new Response(JSON.stringify({ success: true }), { headers });
     }
