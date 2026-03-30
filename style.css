@@ -153,6 +153,12 @@ header h1 { font-size: 18px; font-weight: 600; }
   background: #fff;
   border: 1px solid #e0e0e0;
   border-left: 3px solid #f39c12;
+  transition: opacity 0.2s, transform 0.2s;
+}
+
+.pending-item.processing {
+  opacity: 0.5;
+  transform: scale(0.98);
 }
 .pending-item .type { font-size: 12px; color: #888; }
 .pending-item .name { font-size: 14px; margin: 4px 0; }

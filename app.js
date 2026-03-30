@@ -578,22 +578,34 @@ async function approveRequest(idx) {
   const req = pending[idx];
   if (!req) { alert('请求不存在'); return; }
   
-  // 执行操作
-  await executeAction(req);
+  // 立即显示处理状态
+  const container = $('pending-list');
+  const items = container.querySelectorAll('.pending-item');
+  if (items[idx]) {
+    items[idx].classList.add('processing');
+  }
   
-  // 从KV删除
-  await kvRemovePending(idx);
-  
-  updateUI();
+  // 异步执行，不阻塞UI
+  executeAction(req).then(() => {
+    kvRemovePending(idx).then(() => {
+      renderPendingList();
+    });
+  });
 }
 
 async function rejectRequest(idx) {
   if (!state.isAdmin) return;
   
-  // 从KV删除
-  await kvRemovePending(idx);
+  // 立即显示处理状态
+  const container = $('pending-list');
+  const items = container.querySelectorAll('.pending-item');
+  if (items[idx]) {
+    items[idx].classList.add('processing');
+  }
   
-  updateUI();
+  // 异步删除
+  await kvRemovePending(idx);
+  renderPendingList();
 }
 
 async function addAdmin(qqNumber) {
