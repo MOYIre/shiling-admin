@@ -152,6 +152,30 @@ function parseLoginToken(token) {
 }
 
 // ==================== 认证相关 ====================
+// 统一登录入口，自动判断Token类型
+async function login(token) {
+  if (!token || !token.trim()) {
+    alert('请输入Token');
+    return;
+  }
+  
+  token = token.trim();
+  
+  // 尝试解析为骰子Token（base64 JSON格式）
+  const tokenData = parseLoginToken(token);
+  
+  if (tokenData && !tokenData.error) {
+    // 骰子Token
+    await loginWithDiceToken(token, tokenData);
+  } else if (tokenData?.error) {
+    // Token过期
+    alert(tokenData.error);
+  } else {
+    // 尝试作为GitHub Token
+    await loginWithGitHub(token);
+  }
+}
+
 // 超级管理员登录
 async function loginWithGitHub(token) {
   showLoading();
@@ -172,6 +196,14 @@ async function loginWithGitHub(token) {
     state.isAdmin = state.isSuperAdmin || 
                      (state.data.admins && state.data.admins.includes(user.login));
     
+    if (!state.isAdmin) {
+      alert('您不是管理员，无法登录');
+      state.token = null;
+      state.loginType = null;
+      hideLoading();
+      return;
+    }
+    
     // 保存到 sessionStorage
     sessionStorage.setItem('gh_token', token);
     sessionStorage.setItem('login_type', 'github');
@@ -191,24 +223,9 @@ async function loginWithGitHub(token) {
 }
 
 // 普通管理员登录（骰子Token）
-async function loginWithDiceToken(token) {
+async function loginWithDiceToken(token, tokenData) {
   showLoading();
   try {
-    // 解析token
-    const tokenData = parseLoginToken(token);
-    
-    if (!tokenData) {
-      alert('无效的Token格式');
-      hideLoading();
-      return;
-    }
-    
-    if (tokenData.error) {
-      alert(tokenData.error);
-      hideLoading();
-      return;
-    }
-    
     // 获取gist数据
     await fetchGist();
     
@@ -220,7 +237,7 @@ async function loginWithDiceToken(token) {
       return;
     }
     
-    // 验证签名（简化：检查token中的签名是否匹配）
+    // 验证签名
     const expectedSig = btoa(tokenData.qq + tokenData.exp + 'shiling').slice(0, 16);
     if (tokenData.sig !== expectedSig) {
       alert('Token签名验证失败');
@@ -710,34 +727,16 @@ async function removeAdmin(idx) {
 
 // ==================== 事件处理 ====================
 function initEventListeners() {
-  // 超级管理员登录
-  $('super-login-btn').addEventListener('click', () => {
-    const token = prompt('请输入您的 GitHub Personal Access Token:\n\n' +
-      '获取方式:\n' +
-      '1. 访问 https://github.com/settings/tokens\n' +
-      '2. 点击 "Generate new token (classic)"\n' +
-      '3. 勾选 gist 权限\n' +
-      '4. 生成并复制 token');
-    
-    if (token) {
-      loginWithGitHub(token.trim());
-    }
-  });
-  
-  // Token登录
-  $('token-login-btn').addEventListener('click', () => {
-    const token = $('token-input').value.trim();
-    if (!token) {
-      alert('请输入Token');
-      return;
-    }
-    loginWithDiceToken(token);
+  // 统一登录
+  $('login-btn').addEventListener('click', () => {
+    const token = $('token-input').value;
+    login(token);
   });
   
   // Token输入框回车
   $('token-input').addEventListener('keypress', e => {
     if (e.key === 'Enter') {
-      $('token-login-btn').click();
+      $('login-btn').click();
     }
   });
   
