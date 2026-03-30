@@ -49,11 +49,49 @@ export async function onRequest({ request, env }) {
       
       let pending = await kv.get('pendingRequests', { type: 'json' }) || [];
       
-      const exists = pending.some(p => 
+      // 检查pending列表重复
+      const existsInPending = pending.some(p => 
         p.action === action && p.type === type && p.period === period && p.name === name
       );
-      if (exists) {
+      if (existsInPending) {
         return new Response(JSON.stringify({ error: '该申请已存在' }), { status: 400, headers });
+      }
+      
+      // 检查菜单中是否已存在（仅对加菜/加饮）
+      const isAdd = action === '加菜' || action === '加饮' || action === '加';
+      if (isAdd) {
+        try {
+          const menuRes = await fetch('https://ghproxy.net/https://gist.githubusercontent.com/MOYIre/a9f8a81d1ec3498c0d7b7afc24f43794/raw');
+          if (menuRes.ok) {
+            const menu = await menuRes.json();
+            
+            if (type === 'drink') {
+              // 饮品：检查所有时段
+              const allDrinks = [
+                ...(menu.drink?.morning || []),
+                ...(menu.drink?.afternoon || []),
+                ...(menu.drink?.evening || []),
+                ...(menu.drink?.night || [])
+              ];
+              if (allDrinks.includes(name)) {
+                return new Response(JSON.stringify({ error: '该饮品已存在于菜单中' }), { status: 400, headers });
+              }
+            } else if (type === 'food') {
+              // 食物：检查指定时段或通用池
+              if (period === 'extra') {
+                if (menu.extraPool?.includes(name)) {
+                  return new Response(JSON.stringify({ error: '该菜品已存在于通用池中' }), { status: 400, headers });
+                }
+              } else {
+                if (menu.food?.[period]?.includes(name)) {
+                  return new Response(JSON.stringify({ error: '该菜品已存在于' + {breakfast:'早餐',lunch:'午餐',dinner:'晚餐',midnight:'夜宵'}[period] + '菜单中' }), { status: 400, headers });
+                }
+              }
+            }
+          }
+        } catch (e) {
+          // 获取菜单失败，跳过检查
+        }
       }
       
       pending.push({ action, type, period, name, qq: qq || '', time: new Date().toISOString() });
