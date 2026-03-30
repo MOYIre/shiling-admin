@@ -581,45 +581,51 @@ async function approveRequest(idx) {
   const req = pending[idx];
   if (!req) { alert('请求不存在'); return; }
   
-  // 立即显示处理状态
+  // 立即播放通过动画
   const container = $('pending-list');
   const items = container.querySelectorAll('.pending-item');
-  if (items[idx]) {
-    items[idx].classList.add('processing');
+  const item = items[idx];
+  if (item) {
+    item.classList.add('approved');
   }
   
+  // 后台执行操作
   try {
-    // 执行操作
     await executeApproval(req);
-    // 删除KV中的记录
     await kvRemovePending(idx);
   } catch (err) {
     alert('操作失败: ' + err.message);
   }
   
-  // 刷新列表
-  await renderPendingList();
-  updateUI();
+  // 动画结束后更新列表
+  setTimeout(async () => {
+    await renderPendingList();
+    updateUI();
+  }, 300);
 }
 
 async function rejectRequest(idx) {
   if (!state.isAdmin) return;
   
-  // 立即显示处理状态
+  // 立即播放拒绝动画
   const container = $('pending-list');
   const items = container.querySelectorAll('.pending-item');
-  if (items[idx]) {
-    items[idx].classList.add('processing');
+  const item = items[idx];
+  if (item) {
+    item.classList.add('rejected');
   }
   
+  // 后台执行删除
   try {
     await kvRemovePending(idx);
   } catch (err) {
     alert('删除失败: ' + err.message);
   }
   
-  // 刷新列表
-  await renderPendingList();
+  // 动画结束后更新列表
+  setTimeout(async () => {
+    await renderPendingList();
+  }, 300);
 }
 
 // 执行审核通过操作
@@ -813,9 +819,7 @@ function initEventListeners() {
       approveRequest(parseInt(e.target.dataset.approve));
     }
     if (e.target.dataset.reject !== undefined) {
-      if (confirm('确定要拒绝这个申请吗？')) {
-        rejectRequest(parseInt(e.target.dataset.reject));
-      }
+      rejectRequest(parseInt(e.target.dataset.reject));
     }
   });
   
