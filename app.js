@@ -423,7 +423,7 @@ async function renderPendingList() {
         <div class="action">${req.action || '加菜'}</div>
         <div class="type">${req.type === 'food' ? '菜品' : '饮品'} - ${periodNames[req.period] || req.period}</div>
         <div class="name">${req.name}</div>
-        ${req.qq ? `<div class="submitter">提交者: <img src="https://q1.qlogo.cn/g?b=qq&nk=${req.qq}&s=20" alt="" style="vertical-align:middle;border-radius:50%"> ${req.qq}</div>` : ''}
+        ${req.qq ? `<div class="submitter">提交者: <img src="https://q1.qlogo.cn/g?b=qq&nk=${req.qq}&s=40" alt="" style="vertical-align:middle;border-radius:50%"> ${req.qq}</div>` : ''}
       </div>
       <div class="actions">
         <button class="btn small success" data-approve="${idx}">通过</button>
