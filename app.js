@@ -46,11 +46,11 @@ async function kvGetPending() {
   }
 }
 
-async function kvAddPending(action, type, period, name) {
+async function kvAddPending(action, type, period, name, qq = '') {
   const res = await fetch(KV_API, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action, type, period, name })
+    body: JSON.stringify({ action, type, period, name, qq })
   });
   return await res.json();
 }
@@ -848,13 +848,14 @@ function handleUrlParams() {
   const type = params.get('type');
   const period = params.get('period');
   const name = params.get('name');
+  const qq = params.get('qq');
   
   if (action && type && period && name) {
     // 清除URL参数
     window.history.replaceState({}, '', window.location.pathname);
     
     // 显示提交提示
-    return { action, type, period, name };
+    return { action, type, period, name, qq };
   }
   return null;
 }
@@ -884,7 +885,9 @@ function showSubmitDialog(data) {
   
   // 非管理员：提交到待审核列表
   if (confirm('申请' + actionText + typeText + '：' + periodName + ' - ' + data.name + '\n\n确定提交审核吗？')) {
-    addToPending(data);
+    kvAddPending(data.action, data.type, data.period, data.name, data.qq || '').then(result => {
+      alert(result.success ? '已提交申请，等待管理员审核' : (result.error || '提交失败'));
+    });
   }
 }
 
