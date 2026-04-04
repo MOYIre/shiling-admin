@@ -280,12 +280,8 @@
         hint.className = 'admin-hint admin';
         hint.textContent = '✓ 超级管理员模式 - 可删除记录';
         $('batch-bar').classList.add('show');
-      } else if (loginType === 'token') {
-        hint.className = 'admin-hint';
-        hint.textContent = '提示: 仅超级管理员可删除记录';
       } else {
-        hint.className = 'admin-hint';
-        hint.textContent = '提示: 登录管理面板后可删除记录';
+        hint.style.display = 'none';
       }
     }
     
