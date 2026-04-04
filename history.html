@@ -267,19 +267,22 @@
     function checkAdmin() {
       const loginType = sessionStorage.getItem('login_type');
       
+      // 只有 GitHub 登录才是超级管理员，才能删除记录
       if (loginType === 'github') {
         authToken = sessionStorage.getItem('gh_token');
         isAdmin = true;
-      } else if (loginType === 'token') {
-        authToken = sessionStorage.getItem('dice_token');
-        isAdmin = true;
+      } else {
+        isAdmin = false;
       }
       
       const hint = $('admin-hint');
       if (isAdmin) {
         hint.className = 'admin-hint admin';
-        hint.textContent = '✓ 管理员模式 - 可删除记录';
+        hint.textContent = '✓ 超级管理员模式 - 可删除记录';
         $('batch-bar').classList.add('show');
+      } else if (loginType === 'token') {
+        hint.className = 'admin-hint';
+        hint.textContent = '提示: 仅超级管理员可删除记录';
       } else {
         hint.className = 'admin-hint';
         hint.textContent = '提示: 登录管理面板后可删除记录';
@@ -346,11 +349,10 @@
       
       if (!confirm(`确定要删除 ${indexes.length} 条记录吗？`)) return;
       
-      // 构建带类型的索引
-      const typedIndexes = indexes.map(idx => {
-        const record = allRecords[idx];
-        // pending 状态的在 pendingRequests，其他在 approvalHistory
-        return record.status === 'pending' ? `pending:${idx}` : `history:${idx}`;
+      // 传递记录的关键字段用于匹配
+      const records = indexes.map(idx => {
+        const r = allRecords[idx];
+        return { time: r.time, status: r.status, name: r.name };
       });
       
       try {
@@ -360,12 +362,12 @@
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${authToken}`
           },
-          body: JSON.stringify({ indexes: typedIndexes })
+          body: JSON.stringify({ records })
         });
         
         const result = await res.json();
         if (result.success) {
-          // 从后往前移除UI
+          // 从UI移除已删除的记录
           indexes.sort((a, b) => b - a).forEach(idx => {
             allRecords.splice(idx, 1);
           });
