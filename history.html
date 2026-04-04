@@ -17,6 +17,15 @@
     
     h1 { font-size: 20px; margin-bottom: 16px; text-align: center; }
     
+    /* 管理员提示 */
+    .admin-hint {
+      text-align: center;
+      font-size: 12px;
+      color: #888;
+      margin-bottom: 12px;
+    }
+    .admin-hint.admin { color: #27ae60; }
+    
     /* 过滤器 */
     .filters {
       display: flex;
@@ -66,17 +75,62 @@
       border-radius: 8px;
     }
     
+    /* 批量操作栏 */
+    .batch-bar {
+      display: none;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px;
+      background: #fff;
+      border: 1px solid #e0e0e0;
+      margin-bottom: 12px;
+    }
+    .batch-bar.show { display: flex; }
+    .batch-bar .selected-count { font-size: 13px; color: #666; }
+    .batch-bar .btn-group { margin-left: auto; display: flex; gap: 8px; }
+    
+    /* 按钮 */
+    .btn {
+      padding: 8px 14px;
+      border: 1px solid #ddd;
+      background: #fff;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .btn:hover { background: #f5f5f5; }
+    .btn.danger { background: #e74c3c; color: #fff; border-color: #e74c3c; }
+    .btn.danger:hover { background: #c0392b; }
+    .btn.small { padding: 4px 8px; font-size: 12px; }
+    .btn.primary { background: #333; color: #fff; border-color: #333; }
+    
     /* 记录列表 */
     .record-list { display: flex; flex-direction: column; gap: 8px; }
     .record-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
       padding: 12px;
       background: #fff;
       border: 1px solid #e0e0e0;
       border-left: 3px solid #999;
+      transition: all 0.2s;
     }
+    .record-item.selected { background: #f0f7ff; border-color: #3498db; }
     .record-item.approved { border-left-color: #27ae60; }
     .record-item.rejected { border-left-color: #e74c3c; }
     .record-item.pending { border-left-color: #f39c12; }
+    .record-item.deleting { opacity: 0.5; pointer-events: none; }
+    
+    /* 复选框 */
+    .record-checkbox {
+      width: 18px;
+      height: 18px;
+      margin-top: 2px;
+      cursor: pointer;
+    }
+    .record-checkbox.hidden { display: none; }
+    
+    .record-content { flex: 1; min-width: 0; }
     
     .record-header {
       display: flex;
@@ -104,6 +158,21 @@
     }
     .record-qq img { width: 16px; height: 16px; border-radius: 50%; }
     
+    /* 单条删除按钮 */
+    .delete-single {
+      opacity: 0;
+      padding: 4px 8px;
+      font-size: 12px;
+      background: #fff;
+      border: 1px solid #e74c3c;
+      color: #e74c3c;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .record-item:hover .delete-single { opacity: 1; }
+    .delete-single:hover { background: #e74c3c; color: #fff; }
+    .delete-single.hidden { display: none; }
+    
     .empty { text-align: center; color: #888; padding: 32px; font-size: 14px; }
     
     /* 加载 */
@@ -122,6 +191,8 @@
     @media (max-width: 400px) {
       .filters { flex-direction: column; }
       .filters input, .filters select { width: 100%; }
+      .batch-bar { flex-wrap: wrap; }
+      .batch-bar .btn-group { margin-left: 0; width: 100%; justify-content: flex-end; margin-top: 8px; }
     }
   </style>
 </head>
@@ -129,12 +200,25 @@
   <div id="app">
     <h1>审核记录</h1>
     
+    <div id="admin-hint" class="admin-hint"></div>
+    
     <!-- 状态标签 -->
     <div class="status-tabs">
       <button class="status-tab active" data-status="">全部</button>
       <button class="status-tab" data-status="approved">已通过</button>
       <button class="status-tab" data-status="pending">待审核</button>
       <button class="status-tab" data-status="rejected">未通过</button>
+    </div>
+    
+    <!-- 批量操作栏 -->
+    <div id="batch-bar" class="batch-bar">
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
+        <input type="checkbox" id="select-all"> 全选
+      </label>
+      <span class="selected-count">已选 <span id="selected-count">0</span> 项</span>
+      <div class="btn-group">
+        <button class="btn danger" id="batch-delete-btn">删除选中</button>
+      </div>
     </div>
     
     <!-- 过滤器 -->
@@ -159,8 +243,12 @@
 
   <script>
     const HISTORY_API = '/api/history';
+    const PENDING_API = '/api/pending';
     let allRecords = [];
     let currentStatus = '';
+    let selectedIndexes = new Set();
+    let isAdmin = false;
+    let authToken = null;
     
     const $ = id => document.getElementById(id);
     
@@ -175,6 +263,29 @@
       pending: '待审核'
     };
     
+    // 检查管理员登录状态
+    function checkAdmin() {
+      const loginType = sessionStorage.getItem('login_type');
+      
+      if (loginType === 'github') {
+        authToken = sessionStorage.getItem('gh_token');
+        isAdmin = true;
+      } else if (loginType === 'token') {
+        authToken = sessionStorage.getItem('dice_token');
+        isAdmin = true;
+      }
+      
+      const hint = $('admin-hint');
+      if (isAdmin) {
+        hint.className = 'admin-hint admin';
+        hint.textContent = '✓ 管理员模式 - 可删除记录';
+        $('batch-bar').classList.add('show');
+      } else {
+        hint.className = 'admin-hint';
+        hint.textContent = '提示: 登录管理面板后可删除记录';
+      }
+    }
+    
     async function fetchHistory() {
       try {
         const qq = $('search-qq').value.trim();
@@ -187,6 +298,8 @@
         
         const res = await fetch(url);
         allRecords = await res.json();
+        selectedIndexes.clear();
+        updateBatchBar();
         renderRecords();
       } catch (e) {
         $('record-list').innerHTML = '<p class="empty">加载失败</p>';
@@ -201,20 +314,70 @@
         return;
       }
       
-      container.innerHTML = allRecords.map(record => `
-        <div class="record-item ${record.status}">
-          <div class="record-header">
-            <span class="record-meta">${record.action || '加菜'}</span>
-            <span class="record-status ${record.status}">${statusTexts[record.status]}</span>
+      container.innerHTML = allRecords.map((record, idx) => `
+        <div class="record-item ${record.status} ${selectedIndexes.has(idx) ? 'selected' : ''}" data-idx="${idx}">
+          <input type="checkbox" class="record-checkbox ${isAdmin ? '' : 'hidden'}" 
+                 data-idx="${idx}" ${selectedIndexes.has(idx) ? 'checked' : ''}>
+          <div class="record-content">
+            <div class="record-header">
+              <span class="record-meta">${record.action || '加菜'}</span>
+              <span class="record-status ${record.status}">${statusTexts[record.status]}</span>
+            </div>
+            <div class="record-name">${record.name}</div>
+            <div class="record-meta">
+              <span>${record.type === 'food' ? '菜品' : '饮品'} - ${periodNames[record.period] || record.period}</span>
+              ${record.qq ? `<span class="record-qq"><img src="https://q1.qlogo.cn/g?b=qq&nk=${record.qq}&s=40" alt=""> ${record.qq}</span>` : ''}
+              <span>${new Date(record.time).toLocaleString('zh-CN')}</span>
+            </div>
           </div>
-          <div class="record-name">${record.name}</div>
-          <div class="record-meta">
-            <span>${record.type === 'food' ? '菜品' : '饮品'} - ${periodNames[record.period] || record.period}</span>
-            ${record.qq ? `<span class="record-qq"><img src="https://q1.qlogo.cn/g?b=qq&nk=${record.qq}&s=40" alt=""> ${record.qq}</span>` : ''}
-            <span>${new Date(record.time).toLocaleString('zh-CN')}</span>
-          </div>
+          <button class="delete-single ${isAdmin ? '' : 'hidden'}" data-idx="${idx}">删除</button>
         </div>
       `).join('');
+    }
+    
+    function updateBatchBar() {
+      $('selected-count').textContent = selectedIndexes.size;
+      $('select-all').checked = selectedIndexes.size === allRecords.length && allRecords.length > 0;
+    }
+    
+    // 删除记录
+    async function deleteRecords(indexes) {
+      if (!isAdmin || indexes.length === 0) return;
+      
+      if (!confirm(`确定要删除 ${indexes.length} 条记录吗？`)) return;
+      
+      // 构建带类型的索引
+      const typedIndexes = indexes.map(idx => {
+        const record = allRecords[idx];
+        // pending 状态的在 pendingRequests，其他在 approvalHistory
+        return record.status === 'pending' ? `pending:${idx}` : `history:${idx}`;
+      });
+      
+      try {
+        const res = await fetch(HISTORY_API, {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+          },
+          body: JSON.stringify({ indexes: typedIndexes })
+        });
+        
+        const result = await res.json();
+        if (result.success) {
+          // 从后往前移除UI
+          indexes.sort((a, b) => b - a).forEach(idx => {
+            allRecords.splice(idx, 1);
+          });
+          selectedIndexes.clear();
+          updateBatchBar();
+          renderRecords();
+        } else {
+          alert(result.error || '删除失败');
+        }
+      } catch (e) {
+        alert('删除失败: ' + e.message);
+      }
     }
     
     // 状态标签切换
@@ -237,7 +400,48 @@
     $('search-keyword').addEventListener('input', debounceSearch);
     $('search-qq').addEventListener('input', debounceSearch);
     
-    // 初始加载
+    // 复选框事件
+    $('record-list').addEventListener('change', e => {
+      if (e.target.classList.contains('record-checkbox')) {
+        const idx = parseInt(e.target.dataset.idx);
+        if (e.target.checked) {
+          selectedIndexes.add(idx);
+        } else {
+          selectedIndexes.delete(idx);
+        }
+        updateBatchBar();
+        // 更新行样式
+        const item = e.target.closest('.record-item');
+        item.classList.toggle('selected', e.target.checked);
+      }
+    });
+    
+    // 全选
+    $('select-all').addEventListener('change', e => {
+      if (e.target.checked) {
+        allRecords.forEach((_, idx) => selectedIndexes.add(idx));
+      } else {
+        selectedIndexes.clear();
+      }
+      updateBatchBar();
+      renderRecords();
+    });
+    
+    // 单条删除
+    $('record-list').addEventListener('click', e => {
+      if (e.target.classList.contains('delete-single')) {
+        const idx = parseInt(e.target.dataset.idx);
+        deleteRecords([idx]);
+      }
+    });
+    
+    // 批量删除
+    $('batch-delete-btn').addEventListener('click', () => {
+      deleteRecords([...selectedIndexes]);
+    });
+    
+    // 初始化
+    checkAdmin();
     fetchHistory();
   </script>
 </body>

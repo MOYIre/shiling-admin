@@ -1,8 +1,40 @@
 /**
  * 审核历史 API
  * EdgeOne Pages Edge Function
- * 公开接口，无需登录
+ * GET/POST: 公开接口
+ * DELETE: 需要管理员验证
  */
+
+const ADMINS = ['3029590078']; // 管理员QQ列表
+
+function verifyAdmin(request, env) {
+  // 从 Authorization header 获取 token
+  const auth = request.headers.get('Authorization') || '';
+  const token = auth.replace('Bearer ', '');
+  
+  if (!token) return false;
+  
+  // 尝试解析骰子Token
+  try {
+    const decoded = atob(token);
+    const data = JSON.parse(decoded);
+    if (data.qq && data.exp && data.sig) {
+      // 检查过期
+      if (Date.now() > data.exp) return false;
+      // 验证签名
+      const expectedSig = btoa(data.qq + data.exp + 'shiling').slice(0, 16);
+      if (data.sig !== expectedSig) return false;
+      // 检查是否是管理员
+      return ADMINS.includes(data.qq);
+    }
+  } catch (e) {}
+  
+  // 验证 GitHub Token（超级管理员）
+  const ghToken = typeof GITHUB_TOKEN !== 'undefined' ? GITHUB_TOKEN : env?.GITHUB_TOKEN;
+  if (token === ghToken) return true;
+  
+  return false;
+}
 
 export async function onRequest({ request, env }) {
   const kv = typeof XBSKV !== 'undefined' ? XBSKV : env?.SHILING_KV;
@@ -19,8 +51,8 @@ export async function onRequest({ request, env }) {
   
   const headers = {
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Content-Type': 'application/json'
   };
   
@@ -104,6 +136,55 @@ export async function onRequest({ request, env }) {
       await kv.put('approvalHistory', JSON.stringify(history));
       
       return new Response(JSON.stringify({ success: true }), { headers });
+    }
+    
+    // DELETE: 删除历史记录（需要管理员权限）
+    if (method === 'DELETE') {
+      // 验证管理员权限
+      if (!verifyAdmin(request, env)) {
+        return new Response(JSON.stringify({ error: '无权限' }), { status: 403, headers });
+      }
+      
+      const body = await request.json();
+      const { indexes } = body; // 要删除的索引数组，格式: ["history:0", "pending:1"]
+      
+      if (!indexes || !Array.isArray(indexes) || indexes.length === 0) {
+        return new Response(JSON.stringify({ error: '请选择要删除的记录' }), { status: 400, headers });
+      }
+      
+      // 分别处理 history 和 pending
+      const historyIndexes = [];
+      const pendingIndexes = [];
+      
+      indexes.forEach(idx => {
+        const [type, i] = idx.split(':');
+        if (type === 'history') historyIndexes.push(parseInt(i));
+        else if (type === 'pending') pendingIndexes.push(parseInt(i));
+      });
+      
+      // 删除历史记录（从后往前删除，避免索引变化）
+      if (historyIndexes.length > 0) {
+        let history = await kv.get('approvalHistory', { type: 'json' }) || [];
+        historyIndexes.sort((a, b) => b - a).forEach(i => {
+          if (i >= 0 && i < history.length) {
+            history.splice(i, 1);
+          }
+        });
+        await kv.put('approvalHistory', JSON.stringify(history));
+      }
+      
+      // 删除待审核记录
+      if (pendingIndexes.length > 0) {
+        let pending = await kv.get('pendingRequests', { type: 'json' }) || [];
+        pendingIndexes.sort((a, b) => b - a).forEach(i => {
+          if (i >= 0 && i < pending.length) {
+            pending.splice(i, 1);
+          }
+        });
+        await kv.put('pendingRequests', JSON.stringify(pending));
+      }
+      
+      return new Response(JSON.stringify({ success: true, deleted: indexes.length }), { headers });
     }
     
     return new Response(JSON.stringify({ error: '不支持的请求方法' }), { status: 405, headers });
