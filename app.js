@@ -598,51 +598,82 @@ async function approveRequest(idx) {
   const req = pending[idx];
   if (!req) { alert('请求不存在'); return; }
   
-  // 立即播放通过动画
+  // 立即播放动画并移除UI
   const container = $('pending-list');
   const items = container.querySelectorAll('.pending-item');
   const item = items[idx];
   if (item) {
     item.classList.add('approved');
+    setTimeout(() => {
+      item.remove();
+      // 更新待审核数量
+      const countEl = $('pending-count');
+      const newCount = pending.length - 1;
+      if (newCount > 0) {
+        countEl.textContent = newCount;
+      } else {
+        countEl.classList.add('hidden');
+      }
+      // 如果列表为空，显示空状态
+      if (container.querySelectorAll('.pending-item').length === 0) {
+        container.innerHTML = '<p class="empty">暂无待审核申请</p>';
+      }
+    }, 300);
   }
   
-  // 后台执行操作
-  try {
-    await executeApproval(req);
-    await kvRemovePending(idx, 'approved');
-  } catch (err) {
-    alert('操作失败: ' + err.message);
-  }
-  
-  // 动画结束后更新列表
-  setTimeout(async () => {
-    await renderPendingList();
-    updateUI();
-  }, 300);
+  // 后台执行操作（不阻塞UI）
+  (async () => {
+    try {
+      // 先从KV移除（快速）
+      await kvRemovePending(idx, 'approved');
+      // 然后执行数据同步（慢，但不阻塞UI）
+      await executeApproval(req);
+    } catch (err) {
+      console.error('审批操作失败:', err);
+      alert('数据同步失败: ' + err.message);
+    }
+  })();
 }
 
 async function rejectRequest(idx) {
   if (!state.isAdmin) return;
   
-  // 立即播放拒绝动画
+  // 立即播放动画并移除UI
   const container = $('pending-list');
   const items = container.querySelectorAll('.pending-item');
   const item = items[idx];
+  
+  // 获取当前数量用于更新
+  const countEl = $('pending-count');
+  const currentCount = parseInt(countEl.textContent) || 0;
+  
   if (item) {
     item.classList.add('rejected');
+    setTimeout(() => {
+      item.remove();
+      // 更新待审核数量
+      const newCount = currentCount - 1;
+      if (newCount > 0) {
+        countEl.textContent = newCount;
+      } else {
+        countEl.classList.add('hidden');
+      }
+      // 如果列表为空，显示空状态
+      if (container.querySelectorAll('.pending-item').length === 0) {
+        container.innerHTML = '<p class="empty">暂无待审核申请</p>';
+      }
+    }, 300);
   }
   
-  // 后台执行删除
-  try {
-    await kvRemovePending(idx, 'rejected');
-  } catch (err) {
-    alert('删除失败: ' + err.message);
-  }
-  
-  // 动画结束后更新列表
-  setTimeout(async () => {
-    await renderPendingList();
-  }, 300);
+  // 后台执行删除（不阻塞UI）
+  (async () => {
+    try {
+      await kvRemovePending(idx, 'rejected');
+    } catch (err) {
+      console.error('拒绝操作失败:', err);
+      alert('操作失败: ' + err.message);
+    }
+  })();
 }
 
 // 执行审核通过操作
