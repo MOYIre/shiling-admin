@@ -55,8 +55,8 @@ async function kvAddPending(action, type, period, name, qq = '') {
   return await res.json();
 }
 
-async function kvRemovePending(idx, status = 'rejected') {
-  const res = await fetch(KV_API + '?idx=' + idx + '&status=' + status, { method: 'DELETE' });
+async function kvRemovePending(id, status = 'rejected') {
+  const res = await fetch(KV_API + '?id=' + encodeURIComponent(id) + '&status=' + status, { method: 'DELETE' });
   return await res.json();
 }
 
@@ -418,7 +418,7 @@ async function renderPendingList() {
   const periodNames = { ...CONFIG.foodPeriods, extra: '通用池', all: '不限时段' };
   
   container.innerHTML = pending.map((req, idx) => `
-    <div class="pending-item">
+    <div class="pending-item" data-pending-id="${req.id || `idx-${idx}`}">
       <div class="info">
         <div class="action">${req.action || '加菜'}</div>
         <div class="type">${req.type === 'food' ? '菜品' : '饮品'} - ${periodNames[req.period] || req.period}</div>
@@ -426,8 +426,8 @@ async function renderPendingList() {
         ${req.qq ? `<div class="submitter">提交者: <img src="https://q1.qlogo.cn/g?b=qq&nk=${req.qq}&s=40" alt="" style="vertical-align:middle;border-radius:50%"> ${req.qq}</div>` : ''}
       </div>
       <div class="actions">
-        <button class="btn small success" data-approve="${idx}">通过</button>
-        <button class="btn small danger" data-reject="${idx}">拒绝</button>
+        <button class="btn small success" data-approve="${req.id || `idx-${idx}`}">通过</button>
+        <button class="btn small danger" data-reject="${req.id || `idx-${idx}`}">拒绝</button>
       </div>
     </div>
   `).join('');
@@ -590,25 +590,24 @@ async function removeItem(type, period, idx) {
   updateUI();
 }
 
-async function approveRequest(idx) {
+async function approveRequest(id) {
   if (!state.isAdmin) return;
   
-  // 从KV获取待审核列表
+  // 从KV获取待审核列表，根据id找到对应请求
   const pending = await kvGetPending();
-  const req = pending[idx];
+  const req = pending.find(p => (p.id || `idx-${pending.indexOf(p)}`) === id);
   if (!req) { alert('请求不存在'); return; }
   
   // 立即播放动画并移除UI
   const container = $('pending-list');
-  const items = container.querySelectorAll('.pending-item');
-  const item = items[idx];
+  const item = container.querySelector(`[data-pending-id="${id}"]`);
   if (item) {
     item.classList.add('approved');
     setTimeout(() => {
       item.remove();
       // 更新待审核数量
       const countEl = $('pending-count');
-      const newCount = pending.length - 1;
+      const newCount = parseInt(countEl.textContent) - 1;
       if (newCount > 0) {
         countEl.textContent = newCount;
       } else {
@@ -625,7 +624,7 @@ async function approveRequest(idx) {
   (async () => {
     try {
       // 先从KV移除（快速）
-      await kvRemovePending(idx, 'approved');
+      await kvRemovePending(id, 'approved');
       // 然后执行数据同步（慢，但不阻塞UI）
       await executeApproval(req);
     } catch (err) {
@@ -635,13 +634,12 @@ async function approveRequest(idx) {
   })();
 }
 
-async function rejectRequest(idx) {
+async function rejectRequest(id) {
   if (!state.isAdmin) return;
   
   // 立即播放动画并移除UI
   const container = $('pending-list');
-  const items = container.querySelectorAll('.pending-item');
-  const item = items[idx];
+  const item = container.querySelector(`[data-pending-id="${id}"]`);
   
   // 获取当前数量用于更新
   const countEl = $('pending-count');
@@ -668,7 +666,7 @@ async function rejectRequest(idx) {
   // 后台执行删除（不阻塞UI）
   (async () => {
     try {
-      await kvRemovePending(idx, 'rejected');
+      await kvRemovePending(id, 'rejected');
     } catch (err) {
       console.error('拒绝操作失败:', err);
       alert('操作失败: ' + err.message);
@@ -846,10 +844,10 @@ function initEventListeners() {
   // 审核操作
   document.addEventListener('click', e => {
     if (e.target.dataset.approve !== undefined) {
-      approveRequest(parseInt(e.target.dataset.approve));
+      approveRequest(e.target.dataset.approve);
     }
     if (e.target.dataset.reject !== undefined) {
-      rejectRequest(parseInt(e.target.dataset.reject));
+      rejectRequest(e.target.dataset.reject);
     }
   });
   

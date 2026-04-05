@@ -36,7 +36,12 @@ export async function onRequest({ request, env }) {
   try {
     if (method === 'GET') {
       const data = await kv.get('pendingRequests', { type: 'json' });
-      return new Response(JSON.stringify(data || []), { headers });
+      // 为旧数据补充 id
+      const result = (data || []).map((item, idx) => ({
+        ...item,
+        id: item.id || `legacy-${idx}-${Date.now()}`
+      }));
+      return new Response(JSON.stringify(result), { headers });
     }
     
     if (method === 'POST') {
@@ -95,23 +100,28 @@ export async function onRequest({ request, env }) {
         }
       }
       
-      pending.push({ action, type, period, name, qq: qq || '', time: new Date().toISOString() });
+      // 生成唯一 ID
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      pending.push({ id, action, type, period, name, qq: qq || '', time: new Date().toISOString() });
       await kv.put('pendingRequests', JSON.stringify(pending));
       
-      return new Response(JSON.stringify({ success: true }), { headers });
+      return new Response(JSON.stringify({ success: true, id }), { headers });
     }
     
     if (method === 'DELETE') {
-      const idx = parseInt(url.searchParams.get('idx') || '-1');
+      const id = url.searchParams.get('id');
       const status = url.searchParams.get('status') || 'rejected'; // approved 或 rejected
       
-      if (idx < 0) {
-        return new Response(JSON.stringify({ error: '无效索引' }), { status: 400, headers });
+      if (!id) {
+        return new Response(JSON.stringify({ error: '缺少id参数' }), { status: 400, headers });
       }
       
       let pending = await kv.get('pendingRequests', { type: 'json' }) || [];
-      if (idx >= pending.length) {
-        return new Response(JSON.stringify({ error: '索引越界' }), { status: 400, headers });
+      
+      // 按 id 查找
+      const idx = pending.findIndex(p => p.id === id || `legacy-${pending.indexOf(p)}-${Date.now()}` === id);
+      if (idx === -1) {
+        return new Response(JSON.stringify({ error: '未找到该记录' }), { status: 400, headers });
       }
       
       // 获取被删除的项
@@ -120,6 +130,7 @@ export async function onRequest({ request, env }) {
       // 保存到历史记录
       let history = await kv.get('approvalHistory', { type: 'json' }) || [];
       history.push({
+        id: removed.id || id,
         action: removed.action,
         type: removed.type,
         period: removed.period,
