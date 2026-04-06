@@ -36,6 +36,7 @@ const CONFIG = {
 
 // ==================== KV API ====================
 const KV_API = '/api/pending';
+const ANNOUNCEMENT_API = '/api/announcement';
 
 async function kvGetPending() {
   try {
@@ -57,6 +58,36 @@ async function kvAddPending(action, type, period, name, qq = '') {
 
 async function kvRemovePending(id, status = 'rejected') {
   const res = await fetch(KV_API + '?id=' + encodeURIComponent(id) + '&status=' + status, { method: 'DELETE' });
+  return await res.json();
+}
+
+// ==================== 公告 API ====================
+async function getAnnouncement() {
+  try {
+    const res = await fetch(ANNOUNCEMENT_API);
+    return await res.json();
+  } catch {
+    return { content: '', updatedAt: null };
+  }
+}
+
+async function saveAnnouncement(content) {
+  const res = await fetch(ANNOUNCEMENT_API, {
+    method: 'POST',
+    headers: { 
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${state.token}`
+    },
+    body: JSON.stringify({ content })
+  });
+  return await res.json();
+}
+
+async function deleteAnnouncement() {
+  const res = await fetch(ANNOUNCEMENT_API, {
+    method: 'DELETE',
+    headers: { 'Authorization': `Bearer ${state.token}` }
+  });
   return await res.json();
 }
 
@@ -334,6 +365,27 @@ function updateUI() {
   renderDrinkMenu();
   renderAdminList();
   renderPendingList();
+  
+  // 超级管理员加载公告
+  if (state.isSuperAdmin) {
+    loadAnnouncement();
+  }
+}
+
+// 加载公告
+async function loadAnnouncement() {
+  const result = await getAnnouncement();
+  const textarea = $('announcement-content');
+  const timeEl = $('announcement-time');
+  
+  if (textarea) {
+    textarea.value = result.content || '';
+  }
+  if (timeEl) {
+    timeEl.textContent = result.updatedAt 
+      ? '上次更新: ' + new Date(result.updatedAt).toLocaleString('zh-CN')
+      : '';
+  }
 }
 
 function renderFoodMenu() {
@@ -866,6 +918,50 @@ function initEventListeners() {
       if (confirm('确定要移除这个管理员吗？')) {
         removeAdmin(parseInt(e.target.dataset.adminIdx));
       }
+    }
+  });
+  
+  // 公告管理（仅超级管理员）
+  $('save-announcement-btn')?.addEventListener('click', async () => {
+    const content = $('announcement-content')?.value?.trim();
+    if (!content) {
+      alert('请输入公告内容');
+      return;
+    }
+    
+    showLoading();
+    try {
+      const result = await saveAnnouncement(content);
+      if (result.success) {
+        alert('公告发布成功！');
+        loadAnnouncement();
+      } else {
+        alert('发布失败: ' + (result.error || '未知错误'));
+      }
+    } catch (err) {
+      alert('发布失败: ' + err.message);
+    } finally {
+      hideLoading();
+    }
+  });
+  
+  $('delete-announcement-btn')?.addEventListener('click', async () => {
+    if (!confirm('确定要删除公告吗？')) return;
+    
+    showLoading();
+    try {
+      const result = await deleteAnnouncement();
+      if (result.success) {
+        alert('公告已删除');
+        $('announcement-content').value = '';
+        $('announcement-time').textContent = '';
+      } else {
+        alert('删除失败: ' + (result.error || '未知错误'));
+      }
+    } catch (err) {
+      alert('删除失败: ' + err.message);
+    } finally {
+      hideLoading();
     }
   });
 }

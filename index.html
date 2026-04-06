@@ -47,6 +47,7 @@
         <button class="tab" data-tab="drink">饮品单</button>
         <button class="tab" data-tab="pending">待审核 <span id="pending-count" class="count hidden">0</span></button>
         <button class="tab admin-only hidden" data-tab="admins">管理员</button>
+        <button class="tab admin-only hidden super-only" data-tab="announcement" style="display:none">公告</button>
       </nav>
 
       <main>
@@ -89,6 +90,19 @@
           <div class="add-form super-only">
             <input type="text" id="new-admin" placeholder="输入QQ号添加管理员...">
             <button class="btn" id="add-admin-btn">添加</button>
+          </div>
+        </section>
+
+        <!-- 公告管理（仅超级管理员） -->
+        <section id="announcement-tab" class="tab-content hidden">
+          <h3>公告管理</h3>
+          <div class="announcement-form">
+            <textarea id="announcement-content" rows="5" placeholder="输入公告内容..."></textarea>
+            <div class="announcement-actions">
+              <button class="btn primary" id="save-announcement-btn">发布公告</button>
+              <button class="btn danger" id="delete-announcement-btn">删除公告</button>
+            </div>
+            <p id="announcement-time" class="hint"></p>
           </div>
         </section>
       </main>
