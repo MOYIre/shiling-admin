@@ -91,6 +91,48 @@ async function deleteAnnouncement() {
   return await res.json();
 }
 
+// ==================== 日志 API ====================
+const LOGS_API = '/api/logs';
+
+async function getLogs(action = '', limit = 100) {
+  try {
+    let url = `${LOGS_API}?limit=${limit}`;
+    if (action) url += `&action=${action}`;
+    const res = await fetch(url);
+    return await res.json();
+  } catch {
+    return [];
+  }
+}
+
+async function addLog(action, type, period = '', name = '', detail = '') {
+  try {
+    const res = await fetch(LOGS_API, {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${state.token}`
+      },
+      body: JSON.stringify({ action, type, period, name, detail })
+    });
+    return await res.json();
+  } catch {
+    return { success: false };
+  }
+}
+
+async function clearLogs() {
+  try {
+    const res = await fetch(LOGS_API, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${state.token}` }
+    });
+    return await res.json();
+  } catch {
+    return { success: false };
+  }
+}
+
 // ==================== 状态管理 ====================
 const state = {
   token: null,
@@ -117,13 +159,17 @@ function showScreen(screenId) {
   $(screenId).classList.remove('hidden');
 }
 
-async function fetchGist() {
+async function fetchGist(forceRefresh = false) {
   // 尝试多个镜像源
   for (let i = 0; i < CONFIG.dataUrls.length; i++) {
-    const url = CONFIG.dataUrls[i];
+    let url = CONFIG.dataUrls[i];
+    // 添加时间戳避免缓存（强制刷新或原始源时）
+    if (forceRefresh || i >= 3) {
+      url += (url.includes('?') ? '&' : '?') + '_t=' + Date.now();
+    }
     try {
       console.log(`尝试从源 ${i + 1}/${CONFIG.dataUrls.length} 获取数据`);
-      const res = await fetch(url);
+      const res = await fetch(url, { cache: 'no-store' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       state.data = await res.json();
       console.log(`成功从源 ${i + 1} 获取数据`);
@@ -485,21 +531,82 @@ async function renderPendingList() {
   `).join('');
 }
 
+// 渲染操作日志
+async function renderLogsList(action = '') {
+  const container = $('logs-list');
+  if (!container) return;
+  
+  const logs = await getLogs(action);
+  
+  if (logs.length === 0) {
+    container.innerHTML = '<p class="empty">暂无操作日志</p>';
+    return;
+  }
+  
+  const actionNames = {
+    add: '添加',
+    delete: '删除',
+    update: '更新'
+  };
+  
+  const typeNames = {
+    food: '菜品',
+    drink: '饮品',
+    admin: '管理员',
+    announcement: '公告'
+  };
+  
+  const periodNames = { ...CONFIG.foodPeriods, extra: '通用池', all: '不限时段' };
+  
+  container.innerHTML = logs.map(log => `
+    <div class="log-item">
+      <div class="log-time">${new Date(log.time).toLocaleString('zh-CN')}</div>
+      <div class="log-admin">
+        ${log.isSuper ? '👑 ' : ''}
+        <img src="${log.admin === 'super-admin' || log.isSuper 
+          ? 'https://github.com/MOYIre.png?size=20' 
+          : `https://q1.qlogo.cn/g?b=qq&nk=${log.admin}&s=20`}" alt="" style="vertical-align:middle;border-radius:50%">
+        ${log.admin}
+      </div>
+      <div class="log-content">
+        <span class="log-action ${log.action}">${actionNames[log.action] || log.action}</span>
+        <span class="log-type">${typeNames[log.type] || log.type}</span>
+        ${log.period ? `<span class="log-period">${periodNames[log.period] || log.period}</span>` : ''}
+        ${log.name ? `<span class="log-name">「${log.name}」</span>` : ''}
+        ${log.detail ? `<span class="log-detail">${log.detail}</span>` : ''}
+      </div>
+    </div>
+  `).join('');
+}
+
 // ==================== CDN缓存刷新 ====================
 async function refreshCDN() {
   const cdnUrls = [
     'https://purge.jsdelivr.net/gh/MOYIre/shiling-data@master/menu.json',
-    'https://purge.jsdelivr.net/gh/MOYIre/shiling-data@latest/menu.json'
+    'https://purge.jsdelivr.net/gh/MOYIre/shiling-data@latest/menu.json',
+    // 刷新 gist 缓存
+    'https://purge.jsdelivr.net/gh/MOYIre/shiling-data@master/gist-cache.json'
   ];
   
+  let successCount = 0;
   for (const url of cdnUrls) {
     try {
-      await fetch(url, { method: 'POST' });
-      console.log('CDN缓存刷新:', url);
+      const res = await fetch(url, { method: 'POST' });
+      if (res.ok) {
+        console.log('CDN缓存刷新成功:', url);
+        successCount++;
+      }
     } catch (e) {
       console.log('CDN刷新失败:', e);
     }
   }
+  
+  // 等待 CDN 缓存生效
+  if (successCount > 0) {
+    await new Promise(resolve => setTimeout(resolve, 500));
+  }
+  
+  return successCount;
 }
 
 // ==================== 同步到GitHub仓库 ====================
@@ -562,6 +669,12 @@ async function saveGist() {
       await refreshCDN();
     }
     
+    // 保存成功后，等待一小段时间再重新获取数据
+    await new Promise(resolve => setTimeout(resolve, 300));
+    
+    // 强制刷新数据（不使用缓存）
+    await fetchGist(true);
+    
     updateUI();
   } catch (err) {
     console.error('Save gist error:', err);
@@ -607,14 +720,21 @@ async function addItem(type, period, name) {
   }
   
   await saveGist();
+  
+  // 记录操作日志
+  await addLog('add', type === 'extraPool' ? 'food' : type, period, name);
+  
   updateUI();
 }
 
 async function removeItem(type, period, idx) {
   if (!state.isAdmin) return;
   
+  let deletedName = '';
+  
   if (type === 'extraPool') {
     // 从通用池删除
+    deletedName = state.data.extraPool[idx];
     state.data.extraPool.splice(idx, 1);
   } else if (period === 'all') {
     // 从所有时段删除饮品
@@ -624,21 +744,26 @@ async function removeItem(type, period, idx) {
       ...(state.data.drink?.evening || []),
       ...(state.data.drink?.night || [])
     ].filter((v, i, a) => a.indexOf(v) === i);
-    const drinkName = allDrinks[idx];
-    if (drinkName) {
+    deletedName = allDrinks[idx];
+    if (deletedName) {
       ['morning', 'afternoon', 'evening', 'night'].forEach(p => {
         if (state.data.drink?.[p]) {
-          const i = state.data.drink[p].indexOf(drinkName);
+          const i = state.data.drink[p].indexOf(deletedName);
           if (i > -1) state.data.drink[p].splice(i, 1);
         }
       });
     }
   } else {
     // 普通删除
+    deletedName = state.data[type][period][idx];
     state.data[type][period].splice(idx, 1);
   }
   
   await saveGist();
+  
+  // 记录操作日志
+  await addLog('delete', type === 'extraPool' ? 'food' : type, period, deletedName);
+  
   updateUI();
 }
 
@@ -778,6 +903,9 @@ async function executeApproval(data) {
   }
   
   await saveGist();
+  
+  // 记录操作日志
+  await addLog(isAdd ? 'add' : 'delete', data.type, data.period, data.name, `审核通过 - 提交者: ${data.qq || '未知'}`);
 }
 
 async function addAdmin(qqNumber) {
@@ -795,14 +923,23 @@ async function addAdmin(qqNumber) {
   
   state.data.admins.push(qqNumber);
   await saveGist();
+  
+  // 记录操作日志
+  await addLog('add', 'admin', '', qqNumber);
+  
   updateUI();
 }
 
 async function removeAdmin(idx) {
   if (!state.isSuperAdmin) return;
   
+  const removedAdmin = state.data.admins[idx];
   state.data.admins.splice(idx, 1);
   await saveGist();
+  
+  // 记录操作日志
+  await addLog('delete', 'admin', '', removedAdmin);
+  
   updateUI();
 }
 
@@ -833,6 +970,11 @@ function initEventListeners() {
       const tabName = tab.dataset.tab;
       $$('.tab-content').forEach(content => content.classList.add('hidden'));
       $(`${tabName}-tab`).classList.remove('hidden');
+      
+      // 切换到日志标签页时加载日志
+      if (tabName === 'logs') {
+        renderLogsList();
+      }
     });
   });
   
@@ -934,6 +1076,8 @@ function initEventListeners() {
       const result = await saveAnnouncement(content);
       if (result.success) {
         alert('公告发布成功！');
+        // 记录操作日志
+        await addLog('update', 'announcement', '', '', content.substring(0, 50) + (content.length > 50 ? '...' : ''));
         loadAnnouncement();
       } else {
         alert('发布失败: ' + (result.error || '未知错误'));
@@ -953,6 +1097,8 @@ function initEventListeners() {
       const result = await deleteAnnouncement();
       if (result.success) {
         alert('公告已删除');
+        // 记录操作日志
+        await addLog('delete', 'announcement');
         $('announcement-content').value = '';
         $('announcement-time').textContent = '';
       } else {
@@ -960,6 +1106,35 @@ function initEventListeners() {
       }
     } catch (err) {
       alert('删除失败: ' + err.message);
+    } finally {
+      hideLoading();
+    }
+  });
+  
+  // 操作日志
+  $('refresh-logs-btn')?.addEventListener('click', () => {
+    const action = $('logs-action-filter')?.value || '';
+    renderLogsList(action);
+  });
+  
+  $('logs-action-filter')?.addEventListener('change', (e) => {
+    renderLogsList(e.target.value);
+  });
+  
+  $('clear-logs-btn')?.addEventListener('click', async () => {
+    if (!confirm('确定要清空所有操作日志吗？此操作不可恢复！')) return;
+    
+    showLoading();
+    try {
+      const result = await clearLogs();
+      if (result.success) {
+        alert('日志已清空');
+        renderLogsList();
+      } else {
+        alert('清空失败');
+      }
+    } catch (err) {
+      alert('清空失败: ' + err.message);
     } finally {
       hideLoading();
     }

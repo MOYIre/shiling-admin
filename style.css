@@ -231,3 +231,83 @@ footer a { color: #333; }
   header { flex-direction: column; gap: 12px; }
   .menu-item { font-size: 12px; padding: 6px 10px; }
 }
+
+/* 公告管理 */
+.announcement-form textarea {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #ddd;
+  font-size: 14px;
+  resize: vertical;
+  margin-bottom: 12px;
+}
+.announcement-actions { display: flex; gap: 8px; }
+
+/* 操作日志 */
+.logs-filter {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  align-items: center;
+}
+.logs-filter select {
+  padding: 6px 10px;
+  border: 1px solid #ddd;
+  font-size: 13px;
+  background: #fff;
+}
+.logs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.log-item {
+  padding: 10px 12px;
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  font-size: 13px;
+}
+.log-time {
+  font-size: 11px;
+  color: #888;
+  margin-bottom: 4px;
+}
+.log-admin {
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 4px;
+}
+.log-admin img {
+  width: 16px;
+  height: 16px;
+  vertical-align: middle;
+  margin-right: 4px;
+}
+.log-content {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+.log-action {
+  padding: 2px 6px;
+  font-size: 11px;
+  border-radius: 2px;
+}
+.log-action.add { background: #d4edda; color: #155724; }
+.log-action.delete { background: #f8d7da; color: #721c24; }
+.log-action.update { background: #fff3cd; color: #856404; }
+.log-type, .log-period {
+  padding: 2px 6px;
+  background: #e9ecef;
+  font-size: 11px;
+  color: #495057;
+}
+.log-name {
+  font-weight: 500;
+  color: #333;
+}
+.log-detail {
+  font-size: 11px;
+  color: #888;
+}
