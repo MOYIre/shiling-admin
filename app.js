@@ -115,9 +115,14 @@ async function addLog(action, type, period = '', name = '', detail = '') {
       },
       body: JSON.stringify({ action, type, period, name, detail })
     });
-    return await res.json();
-  } catch {
-    return { success: false };
+    const result = await res.json();
+    if (!result.success) {
+      console.error('日志记录失败:', result.error || '未知错误', { action, type, period, name });
+    }
+    return result;
+  } catch (e) {
+    console.error('日志记录请求失败:', e.message, { action, type, period, name });
+    return { success: false, error: e.message };
   }
 }
 
@@ -323,6 +328,7 @@ async function loginWithDiceToken(token, tokenData) {
     }
     
     // 登录成功
+    state.token = token;  // 设置token供API调用
     state.loginType = 'token';
     state.qqNumber = tokenData.qq;
     state.isAdmin = true;
@@ -853,7 +859,10 @@ async function rejectRequest(id) {
 
 // 执行审核通过操作
 async function executeApproval(data) {
-  const isAdd = data.action === '加菜' || data.action === '加饮' || data.action === '加';
+  // 判断操作类型：检查是否包含"加"字（添加）或"删"字（删除）
+  const actionStr = data.action || '';
+  const isAdd = actionStr.includes('加');
+  const isDelete = actionStr.includes('删');
   const isFood = data.type === 'food';
   
   if (isAdd) {
@@ -880,7 +889,7 @@ async function executeApproval(data) {
         state.data[data.type][data.period].push(data.name);
       }
     }
-  } else {
+  } else if (isDelete) {
     // 删除
     if (data.period === 'all' || data.period === '不限时段') {
       // 从所有时段删除饮品
