@@ -698,8 +698,13 @@ async function saveGist() {
     await fetchMenu(true);
     updateUI();
   } catch (err) {
+    const msg = err?.message || '';
+    if (/仅超级管理员|无权限|403/.test(msg)) {
+      console.warn('菜单发布权限受限，已忽略弹窗提示:', msg);
+      return;
+    }
     console.error('Save menu error:', err);
-    alert('保存失败: ' + err.message);
+    alert('保存失败: ' + msg);
   }
 }
 async function rollbackMenu(version = 0) {
