@@ -209,11 +209,20 @@ export async function onRequest({ request, env }) {
         console.error('仓库同步失败，但Gist已更新');
       }
       
-      // 3. 刷新CDN缓存
+      // 4. 同步线上KV菜单数据，作为运行时主读取源
       try {
-        await fetch('https://purge.jsdelivr.net/gh/MOYIre/shiling-data@master/menu.json', { method: 'POST' });
-      } catch (e) {}
-      
+        await kv.put('menuData', content);
+        const prevMeta = await kv.get('menuMeta', { type: 'json' }) || { version: 0 };
+        const nextMeta = {
+          version: (prevMeta.version || 0) + 1,
+          updatedAt: new Date().toISOString(),
+          source: 'pending-put'
+        };
+        await kv.put('menuMeta', JSON.stringify(nextMeta));
+      } catch (e) {
+        console.error('KV菜单同步失败，但Gist已更新:', e.message);
+      }
+
       return new Response(JSON.stringify({ success: true }), { headers });
     }
     

@@ -36,6 +36,7 @@ const CONFIG = {
 
 // ==================== KV API ====================
 const KV_API = '/api/pending';
+const MENU_API = '/api/menu';
 const ANNOUNCEMENT_API = '/api/announcement';
 
 async function kvGetPending() {
@@ -148,7 +149,8 @@ const state = {
   qqNumber: null,
   data: null,
   currentFoodPeriod: 'breakfast',
-  currentDrinkPeriod: 'morning'
+  currentDrinkPeriod: 'morning',
+  menuMeta: null
 };
 
 // ==================== DOM 元素 ====================
@@ -162,6 +164,25 @@ function hideLoading() { $('loading').classList.add('hidden'); }
 function showScreen(screenId) {
   $$('.screen').forEach(el => el.classList.add('hidden'));
   $(screenId).classList.remove('hidden');
+}
+
+async function fetchMenu(forceRefresh = false) {
+  try {
+    let url = MENU_API;
+    if (forceRefresh) {
+      url += '?_t=' + Date.now();
+    }
+    const res = await fetch(url, { cache: 'no-store' });
+    const result = await res.json();
+    if (!res.ok || !result.success) {
+      throw new Error(result.error || `HTTP ${res.status}`);
+    }
+    state.data = result.data;
+    state.menuMeta = result.meta || null;
+    return state.data;
+  } catch (e) {
+    return fetchGist(forceRefresh);
+  }
 }
 
 async function fetchGist(forceRefresh = false) {
@@ -274,8 +295,8 @@ async function loginWithGitHub(token) {
     state.isSuperAdmin = gist.owner.login === user.login;
     
     // 检查是否在管理员列表中
-    await fetchGist();
-    state.isAdmin = state.isSuperAdmin || 
+    await fetchMenu();
+    state.isAdmin = state.isSuperAdmin ||
                      (state.data.admins && state.data.admins.includes(user.login));
     
     if (!state.isAdmin) {
@@ -308,8 +329,8 @@ async function loginWithGitHub(token) {
 async function loginWithDiceToken(token, tokenData) {
   showLoading();
   try {
-    // 获取gist数据
-    await fetchGist();
+    // 获取线上菜单数据
+    await fetchMenu();
     
     // 验证是否在管理员列表中
     const admins = state.data.admins || [];
@@ -384,6 +405,19 @@ function checkAuth() {
   }
 }
 
+function renderMenuMeta() {
+  const infoEl = $('menu-meta');
+  if (!infoEl) return;
+  if (!state.menuMeta || !state.menuMeta.updatedAt) {
+    infoEl.textContent = '线上版本: 未发布';
+    return;
+  }
+  const v = state.menuMeta.version ?? 0;
+  const t = new Date(state.menuMeta.updatedAt).toLocaleString('zh-CN');
+  const src = state.menuMeta.source ? ` · 来源: ${state.menuMeta.source}` : '';
+  infoEl.textContent = `线上版本: v${v} · 更新时间: ${t}${src}`;
+}
+
 // ==================== UI 更新 ====================
 function updateUI() {
   // 用户信息
@@ -417,6 +451,7 @@ function updateUI() {
   renderDrinkMenu();
   renderAdminList();
   renderPendingList();
+  renderMenuMeta();
   
   // 超级管理员加载公告
   if (state.isSuperAdmin) {
@@ -645,46 +680,51 @@ async function saveGist() {
     alert('没有编辑权限');
     return;
   }
-  
+
   try {
-    if (state.loginType === 'token') {
-      // 普通管理员：通过Edge Function代理保存
-      const res = await fetch(KV_API, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ data: state.data })
-      });
-      const result = await res.json();
-      if (!result.success) {
-        throw new Error(result.error || '保存失败');
-      }
-    } else {
-      // 超级管理员：直接调用GitHub API
-      await githubApi(`/gists/${CONFIG.gistId}`, {
-        method: 'PATCH',
-        body: JSON.stringify({
-          files: {
-            '食灵菜单数据': {
-              content: JSON.stringify(state.data, null, 2)
-            }
-          }
-        })
-      });
-      
-      await syncToRepo();
-      await refreshCDN();
+    const res = await fetch(MENU_API, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${state.token || ''}`
+      },
+      body: JSON.stringify({ data: state.data })
+    });
+    const result = await res.json();
+    if (!res.ok || !result.success) {
+      throw new Error(result.error || '发布失败');
     }
-    
-    // 保存成功后，等待一小段时间再重新获取数据
-    await new Promise(resolve => setTimeout(resolve, 300));
-    
-    // 强制刷新数据（不使用缓存）
-    await fetchGist(true);
-    
+
+    await fetchMenu(true);
     updateUI();
   } catch (err) {
-    console.error('Save gist error:', err);
+    console.error('Save menu error:', err);
     alert('保存失败: ' + err.message);
+  }
+}
+async function rollbackMenu(version = 0) {
+  if (!state.isAdmin) {
+    alert('没有操作权限');
+    return;
+  }
+  try {
+    const res = await fetch(MENU_API, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${state.token || ''}`
+      },
+      body: JSON.stringify({ version })
+    });
+    const result = await res.json();
+    if (!res.ok || !result.success) {
+      throw new Error(result.error || '回滚失败');
+    }
+    await fetchMenu(true);
+    updateUI();
+    alert(`已回滚到历史版本 v${result.rolledVersion || 'latest'}`);
+  } catch (err) {
+    alert('回滚失败: ' + err.message);
   }
 }
 
@@ -958,6 +998,27 @@ function initEventListeners() {
   $('login-btn').addEventListener('click', () => {
     const token = $('token-input').value;
     login(token);
+  });
+
+  $('publish-menu-btn')?.addEventListener('click', async () => {
+    if (!confirm('确定将当前菜单发布到线上KV吗？')) return;
+    showLoading();
+    try {
+      await saveGist();
+      alert('发布成功');
+    } finally {
+      hideLoading();
+    }
+  });
+
+  $('rollback-menu-btn')?.addEventListener('click', async () => {
+    if (!confirm('确定回滚到上一个历史版本吗？')) return;
+    showLoading();
+    try {
+      await rollbackMenu();
+    } finally {
+      hideLoading();
+    }
   });
   
   // Token输入框回车
