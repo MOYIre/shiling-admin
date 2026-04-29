@@ -676,8 +676,8 @@ async function syncToRepo() {
 
 // ==================== 数据操作 ====================
 async function saveGist() {
-  if (!state.isSuperAdmin) {
-    alert('仅超级管理员可发布到线上');
+  if (!state.isAdmin) {
+    alert('没有编辑权限');
     return;
   }
 
@@ -703,8 +703,8 @@ async function saveGist() {
   }
 }
 async function rollbackMenu(version = 0) {
-  if (!state.isAdmin) {
-    alert('没有操作权限');
+  if (!state.isSuperAdmin) {
+    alert('仅超级管理员可回滚线上菜单');
     return;
   }
   try {
@@ -729,14 +729,14 @@ async function rollbackMenu(version = 0) {
 }
 
 async function addItem(type, period, name) {
-  if (!state.isSuperAdmin) {
-    // 非超级管理员：提交到KV待审核
+  if (!state.isAdmin) {
+    // 非管理员：提交到KV待审核
     const result = await kvAddPending('加' + (type === 'food' ? '菜' : '饮'), type, period, name, state.qqNumber || '');
     alert(result.success ? '已提交申请，等待超级管理员审核上线' : (result.error || '提交失败'));
     return;
   }
   
-  // 超级管理员：直接添加并自动发布
+  // 管理员：直接添加并自动发布
   if (type === 'extraPool' || period === 'extra') {
     // 通用池
     if (!state.data.extraPool) state.data.extraPool = [];
@@ -774,8 +774,8 @@ async function addItem(type, period, name) {
 }
 
 async function removeItem(type, period, idx) {
-  if (!state.isSuperAdmin) {
-    alert('仅超级管理员可直接删除线上菜单');
+  if (!state.isAdmin) {
+    alert('仅管理员可直接删除线上菜单');
     return;
   }
   
