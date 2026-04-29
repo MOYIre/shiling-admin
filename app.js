@@ -676,8 +676,8 @@ async function syncToRepo() {
 
 // ==================== 数据操作 ====================
 async function saveGist() {
-  if (!state.isAdmin) {
-    alert('没有编辑权限');
+  if (!state.isSuperAdmin) {
+    alert('仅超级管理员可发布到线上');
     return;
   }
 
@@ -729,14 +729,14 @@ async function rollbackMenu(version = 0) {
 }
 
 async function addItem(type, period, name) {
-  if (!state.isAdmin) {
-    // 访客：提交到KV待审核
-    const result = await kvAddPending('加' + (type === 'food' ? '菜' : '饮'), type, period, name);
-    alert(result.success ? '已提交申请，等待管理员审核' : (result.error || '提交失败'));
+  if (!state.isSuperAdmin) {
+    // 非超级管理员：提交到KV待审核
+    const result = await kvAddPending('加' + (type === 'food' ? '菜' : '饮'), type, period, name, state.qqNumber || '');
+    alert(result.success ? '已提交申请，等待超级管理员审核上线' : (result.error || '提交失败'));
     return;
   }
   
-  // 管理员：直接添加
+  // 超级管理员：直接添加并自动发布
   if (type === 'extraPool' || period === 'extra') {
     // 通用池
     if (!state.data.extraPool) state.data.extraPool = [];
@@ -766,15 +766,18 @@ async function addItem(type, period, name) {
   }
   
   await saveGist();
-  
+
   // 记录操作日志
-  await addLog('add', type === 'extraPool' ? 'food' : type, period, name);
-  
+  await addLog('add', type === 'extraPool' ? 'food' : type, period, name, '自动发布到线上');
+
   updateUI();
 }
 
 async function removeItem(type, period, idx) {
-  if (!state.isAdmin) return;
+  if (!state.isSuperAdmin) {
+    alert('仅超级管理员可直接删除线上菜单');
+    return;
+  }
   
   let deletedName = '';
   
@@ -806,15 +809,18 @@ async function removeItem(type, period, idx) {
   }
   
   await saveGist();
-  
+
   // 记录操作日志
-  await addLog('delete', type === 'extraPool' ? 'food' : type, period, deletedName);
-  
+  await addLog('delete', type === 'extraPool' ? 'food' : type, period, deletedName, '自动发布到线上');
+
   updateUI();
 }
 
 async function approveRequest(id) {
-  if (!state.isAdmin) return;
+  if (!state.isSuperAdmin) {
+    alert('仅超级管理员可执行上线审核');
+    return;
+  }
   
   // 从KV获取待审核列表，根据id找到对应请求
   const pending = await kvGetPending();
@@ -952,9 +958,9 @@ async function executeApproval(data) {
   }
   
   await saveGist();
-  
+
   // 记录操作日志
-  await addLog(isAdd ? 'add' : 'delete', data.type, data.period, data.name, `审核通过 - 提交者: ${data.qq || '未知'}`);
+  await addLog(isAdd ? 'add' : 'delete', data.type, data.period, data.name, `审核通过并自动发布 - 提交者: ${data.qq || '未知'}`);
 }
 
 async function addAdmin(qqNumber) {
@@ -998,17 +1004,6 @@ function initEventListeners() {
   $('login-btn').addEventListener('click', () => {
     const token = $('token-input').value;
     login(token);
-  });
-
-  $('publish-menu-btn')?.addEventListener('click', async () => {
-    if (!confirm('确定将当前菜单发布到线上KV吗？')) return;
-    showLoading();
-    try {
-      await saveGist();
-      alert('发布成功');
-    } finally {
-      hideLoading();
-    }
   });
 
   $('rollback-menu-btn')?.addEventListener('click', async () => {

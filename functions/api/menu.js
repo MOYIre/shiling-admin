@@ -1,8 +1,8 @@
 /**
  * 菜单发布 API
  * GET: 获取线上菜单（KV优先，Gist回退）
- * POST: 发布当前菜单到KV（管理员）
- * PUT: 回滚到历史版本（管理员）
+ * POST: 发布当前菜单到KV（仅超级管理员）
+ * PUT: 回滚到历史版本（仅超级管理员）
  */
 
 const MENU_KV_KEY = 'menuData';
@@ -72,15 +72,13 @@ async function isAdminToken(token) {
   return false;
 }
 
-async function verifyAdmin(request, env) {
+function verifySuperAdmin(request, env) {
   const auth = request.headers.get('Authorization') || '';
   const token = auth.replace('Bearer ', '').trim();
   if (!token) return false;
 
   const ghToken = typeof GITHUB_TOKEN !== 'undefined' ? GITHUB_TOKEN : env?.GITHUB_TOKEN;
-  if (ghToken && token === ghToken) return true;
-
-  return await isAdminToken(token);
+  return !!(ghToken && token === ghToken);
 }
 
 export async function onRequest({ request, env }) {
@@ -120,8 +118,8 @@ export async function onRequest({ request, env }) {
       }), { headers });
     }
 
-    if (!(await verifyAdmin(request, env))) {
-      return new Response(JSON.stringify({ error: '仅管理员可操作' }), { status: 403, headers });
+    if (!verifySuperAdmin(request, env)) {
+      return new Response(JSON.stringify({ error: '仅超级管理员可操作' }), { status: 403, headers });
     }
 
     if (method === 'POST') {
