@@ -174,7 +174,25 @@
     .delete-single.hidden { display: none; }
     
     .empty { text-align: center; color: #888; padding: 32px; font-size: 14px; }
-    
+
+    /* 分页 */
+    .pagination {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      margin-top: 16px;
+      font-size: 13px;
+      color: #666;
+    }
+    .pagination.show { display: flex; }
+    .pagination .page-info { min-width: 120px; text-align: center; }
+    .pagination .btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+      background: #f5f5f5;
+    }
+
     /* 加载 */
     .loading { text-align: center; padding: 32px; color: #888; }
     
@@ -231,7 +249,14 @@
     <div id="record-list" class="record-list">
       <div class="loading">加载中...</div>
     </div>
-    
+
+    <!-- 分页 -->
+    <div id="pagination" class="pagination">
+      <button class="btn small" id="prev-page">上一页</button>
+      <span class="page-info" id="page-info"></span>
+      <button class="btn small" id="next-page">下一页</button>
+    </div>
+
     <div class="footer-link">
       <a href="/">返回管理面板</a>
       <p style="margin-top: 12px; font-size: 13px; color: #666;">
@@ -246,6 +271,8 @@
     const PENDING_API = '/api/pending';
     let allRecords = [];
     let currentStatus = '';
+    let currentPage = 1;
+    const pageSize = 20;
     let selectedIndexes = new Set();
     let isAdmin = false;
     let authToken = null;
@@ -297,6 +324,7 @@
         
         const res = await fetch(url);
         allRecords = await res.json();
+        currentPage = 1;
         selectedIndexes.clear();
         updateBatchBar();
         renderRecords();
@@ -307,15 +335,24 @@
     
     function renderRecords() {
       const container = $('record-list');
-      
+      const totalPages = Math.ceil(allRecords.length / pageSize);
+
       if (allRecords.length === 0) {
         container.innerHTML = '<p class="empty">暂无记录</p>';
+        renderPagination(totalPages);
         return;
       }
-      
-      container.innerHTML = allRecords.map((record, idx) => `
+
+      if (currentPage > totalPages) currentPage = totalPages;
+
+      const startIndex = (currentPage - 1) * pageSize;
+      const pageRecords = allRecords.slice(startIndex, startIndex + pageSize);
+
+      container.innerHTML = pageRecords.map((record, pageIdx) => {
+        const idx = startIndex + pageIdx;
+        return `
         <div class="record-item ${record.status} ${selectedIndexes.has(idx) ? 'selected' : ''}" data-idx="${idx}">
-          <input type="checkbox" class="record-checkbox ${isAdmin ? '' : 'hidden'}" 
+          <input type="checkbox" class="record-checkbox ${isAdmin ? '' : 'hidden'}"
                  data-idx="${idx}" ${selectedIndexes.has(idx) ? 'checked' : ''}>
           <div class="record-content">
             <div class="record-header">
@@ -331,9 +368,26 @@
           </div>
           <button class="delete-single ${isAdmin ? '' : 'hidden'}" data-idx="${idx}">删除</button>
         </div>
-      `).join('');
+      `;
+      }).join('');
+
+      renderPagination(totalPages);
     }
-    
+
+    function renderPagination(totalPages) {
+      const pagination = $('pagination');
+
+      if (totalPages <= 1) {
+        pagination.classList.remove('show');
+        return;
+      }
+
+      pagination.classList.add('show');
+      $('page-info').textContent = `第 ${currentPage} / ${totalPages} 页，共 ${allRecords.length} 条`;
+      $('prev-page').disabled = currentPage === 1;
+      $('next-page').disabled = currentPage === totalPages;
+    }
+
     function updateBatchBar() {
       $('selected-count').textContent = selectedIndexes.size;
       $('select-all').checked = selectedIndexes.size === allRecords.length && allRecords.length > 0;
@@ -437,7 +491,25 @@
     $('batch-delete-btn').addEventListener('click', () => {
       deleteRecords([...selectedIndexes]);
     });
-    
+
+    // 分页
+    $('prev-page').addEventListener('click', () => {
+      if (currentPage > 1) {
+        currentPage--;
+        renderRecords();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    });
+
+    $('next-page').addEventListener('click', () => {
+      const totalPages = Math.ceil(allRecords.length / pageSize);
+      if (currentPage < totalPages) {
+        currentPage++;
+        renderRecords();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    });
+
     // 初始化
     checkAdmin();
     fetchHistory();
